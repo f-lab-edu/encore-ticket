@@ -39,7 +39,7 @@ class AuthControllerTest {
             {
               "accessToken": "access-token",
               "tokenType": "Bearer",
-              "expiresIn": 1800,
+              "expiresIn": 900,
               "user": {
                 "id": 1,
                 "name": "홍길동",
@@ -53,7 +53,7 @@ class AuthControllerTest {
             {
               "accessToken": "new-access-token",
               "tokenType": "Bearer",
-              "expiresIn": 1800
+              "expiresIn": 900
             }
             """;
 
@@ -149,7 +149,7 @@ class AuthControllerTest {
                 .andExpect(cookie().value("refreshToken", not(emptyString())))
                 .andExpect(cookie().httpOnly("refreshToken", true))
                 .andExpect(cookie().secure("refreshToken", true))
-                .andExpect(cookie().path("refreshToken", "/"));
+                .andExpect(cookie().path("refreshToken", "/auth"));
     }
 
     @Test
@@ -218,7 +218,7 @@ class AuthControllerTest {
                         .cookie(new Cookie("refreshToken", "refresh-token")))
                 .andExpect(status().isNoContent())
                 .andExpect(cookie().maxAge("refreshToken", 0))
-                .andExpect(cookie().path("refreshToken", "/"))
+                .andExpect(cookie().path("refreshToken", "/auth"))
                 .andExpect(content().string(""));
     }
 

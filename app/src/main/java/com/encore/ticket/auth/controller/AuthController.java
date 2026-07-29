@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/auth")
@@ -33,7 +34,12 @@ public class AuthController {
     private static final String OAUTH_STATE_COOKIE = "oauthState";
     private static final String REFRESH_TOKEN_COOKIE = "refreshToken";
 
-    private static final long ACCESS_TOKEN_EXPIRES_IN_SECONDS = 1800L;
+    private static final String OAUTH_STATE_COOKIE_PATH = "/";
+    private static final String REFRESH_TOKEN_COOKIE_PATH = "/auth";
+
+    private static final long ACCESS_TOKEN_EXPIRES_IN_SECONDS = 900L;
+
+    private static final long OAUTH_STATE_COOKIE_MAX_AGE_SECONDS = 600L;
 
     private static final String STUB_OAUTH_STATE = "stub-state";
 
@@ -43,7 +49,7 @@ public class AuthController {
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(stubAuthorizationUri(authProvider))
-                .header(HttpHeaders.SET_COOKIE, cookie(OAUTH_STATE_COOKIE, STUB_OAUTH_STATE).toString())
+                .header(HttpHeaders.SET_COOKIE, oauthStateCookie(STUB_OAUTH_STATE).toString())
                 .build();
     }
 
@@ -60,7 +66,7 @@ public class AuthController {
                 new SocialLoginResponse.User(1L, "홍길동", toAuthProvider(provider), false));
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookie(REFRESH_TOKEN_COOKIE, "refresh-token").toString())
+                .header(HttpHeaders.SET_COOKIE, refreshTokenCookie(newRefreshToken()).toString())
                 .body(body);
     }
 
@@ -71,14 +77,15 @@ public class AuthController {
             throw new InvalidRefreshTokenException();
         }
 
-        return ResponseEntity.ok(
-                new TokenRefreshResponse("new-access-token", TOKEN_TYPE, ACCESS_TOKEN_EXPIRES_IN_SECONDS));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, refreshTokenCookie(newRefreshToken()).toString())
+                .body(new TokenRefreshResponse("new-access-token", TOKEN_TYPE, ACCESS_TOKEN_EXPIRES_IN_SECONDS));
     }
 
     @PostMapping("/logout")
     ResponseEntity<Void> logout() {
         return ResponseEntity.noContent()
-                .header(HttpHeaders.SET_COOKIE, expiredCookie(REFRESH_TOKEN_COOKIE).toString())
+                .header(HttpHeaders.SET_COOKIE, expiredRefreshTokenCookie().toString())
                 .build();
     }
 
@@ -89,6 +96,7 @@ public class AuthController {
 
     private static URI stubAuthorizationUri(AuthProvider provider) {
         return UriComponentsBuilder.fromUriString(stubAuthorizationEndpoint(provider))
+                .queryParam("response_type", "code")
                 .queryParam("client_id", "stub-client-id")
                 .queryParam("redirect_uri", "stub-redirect-uri")
                 .queryParam("state", STUB_OAUTH_STATE)
@@ -98,7 +106,6 @@ public class AuthController {
                 .toUri();
     }
 
-
     private static String stubAuthorizationEndpoint(AuthProvider provider) {
         return switch (provider) {
             case GOOGLE -> "https://accounts.google.com/o/oauth2/v2/auth";
@@ -106,19 +113,31 @@ public class AuthController {
         };
     }
 
-    private static ResponseCookie.ResponseCookieBuilder cookieBuilder(String name, String value) {
+    private static ResponseCookie.ResponseCookieBuilder cookieBuilder(String name, String value, String path) {
         return ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
-                .path("/");
+                .path(path);
     }
 
-    private static ResponseCookie cookie(String name, String value) {
-        return cookieBuilder(name, value).build();
+    private static ResponseCookie oauthStateCookie(String state) {
+        return cookieBuilder(OAUTH_STATE_COOKIE, state, OAUTH_STATE_COOKIE_PATH)
+                .maxAge(OAUTH_STATE_COOKIE_MAX_AGE_SECONDS)
+                .build();
     }
 
-    private static ResponseCookie expiredCookie(String name) {
-        return cookieBuilder(name, "").maxAge(0).build();
+    private static ResponseCookie refreshTokenCookie(String token) {
+        return cookieBuilder(REFRESH_TOKEN_COOKIE, token, REFRESH_TOKEN_COOKIE_PATH).build();
+    }
+
+    private static ResponseCookie expiredRefreshTokenCookie() {
+        return cookieBuilder(REFRESH_TOKEN_COOKIE, "", REFRESH_TOKEN_COOKIE_PATH)
+                .maxAge(0)
+                .build();
+    }
+
+    private static String newRefreshToken() {
+        return "rft_" + UUID.randomUUID().toString().replace("-", "");
     }
 }
