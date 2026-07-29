@@ -1,8 +1,10 @@
 package com.encore.ticket.common;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, problemDetail, headers, status, request);
     }
 
+    @Override
+    protected ResponseEntity<Object> createResponseEntity(
+            Object body,
+            HttpHeaders headers,
+            HttpStatusCode statusCode,
+            WebRequest request) {
+
+        if (body instanceof ProblemDetail problemDetail) {
+            Map<String, Object> properties = problemDetail.getProperties();
+            if (properties == null || !properties.containsKey("code")) {
+                problemDetail.setProperty("code", defaultCode(statusCode));
+            }
+        }
+
+        return super.createResponseEntity(body, headers, statusCode, request);
+    }
+
+    private String defaultCode(HttpStatusCode statusCode) {
+        HttpStatus resolved = HttpStatus.resolve(statusCode.value());
+        return resolved != null ? resolved.name() : "HTTP_" + statusCode.value();
+    }
+
     private List<FieldErrorDetail> toFieldErrorDetails(MethodArgumentNotValidException ex) {
         return ex.getBindingResult().getFieldErrors().stream()
                 .map(this::toFieldErrorDetail)
@@ -45,5 +69,4 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private record FieldErrorDetail(String field, String reason) {
     }
 
-    // TODO: 도메인 예외는 서비스/리포지토리 구현 PR에서 예외 클래스와 함께 @ExceptionHandler 추가 예정
 }

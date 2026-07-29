@@ -3,6 +3,8 @@ package com.encore.ticket.auth.controller;
 import com.encore.ticket.auth.api.AuthProvider;
 import com.encore.ticket.auth.api.dto.SocialLoginResponse;
 import com.encore.ticket.auth.api.dto.TokenRefreshResponse;
+import com.encore.ticket.auth.api.exception.InvalidRefreshTokenException;
+import com.encore.ticket.auth.api.exception.UnsupportedProviderException;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.validation.constraints.NotBlank;
@@ -18,7 +20,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
@@ -67,7 +68,7 @@ public class AuthController {
     ResponseEntity<TokenRefreshResponse> refresh(
             @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) Cookie refreshToken) {
         if (refreshToken == null || refreshToken.getValue() == null || refreshToken.getValue().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "refreshToken 쿠키가 없습니다.");
+            throw new InvalidRefreshTokenException();
         }
 
         return ResponseEntity.ok(
@@ -83,8 +84,7 @@ public class AuthController {
 
     private static AuthProvider toAuthProvider(String provider) {
         return AuthProvider.from(provider)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "지원하지 않는 provider입니다: " + provider));
+                .orElseThrow(() -> new UnsupportedProviderException(provider));
     }
 
     private static URI stubAuthorizationUri(AuthProvider provider) {
