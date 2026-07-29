@@ -1,5 +1,6 @@
 [versions]
 spring-boot = "4.1.0"
+rest-assured = "6.0.1"
 
 [libraries]
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
@@ -7,4 +8,6 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-web = { module = "org.springframework:spring-web" }
 jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations" }
+rest-assured = { module = "io.rest-assured:rest-assured", version.ref = "rest-assured" }

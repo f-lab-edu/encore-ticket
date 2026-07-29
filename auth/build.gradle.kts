@@ -4,4 +4,5 @@ plugins {
 
 dependencies {
     implementation(libs.jackson.annotations)
+    api(libs.spring.web)
 }
