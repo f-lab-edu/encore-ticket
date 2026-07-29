@@ -3,6 +3,9 @@ package com.encore.ticket.common;
 import java.util.List;
 import java.util.Map;
 
+import com.encore.ticket.auth.api.exception.AuthErrorCode;
+import com.encore.ticket.auth.api.exception.AuthException;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -10,6 +13,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -29,6 +33,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperty("errors", toFieldErrorDetails(ex));
 
         return handleExceptionInternal(ex, problemDetail, headers, status, request);
+    }
+
+    @ExceptionHandler(AuthException.class)
+    protected ResponseEntity<Object> handleAuthException(AuthException ex, WebRequest request) {
+
+        HttpStatus status = statusOf(ex.errorCode());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
+        problemDetail.setProperty("code", ex.errorCode().name());
+
+        return handleExceptionInternal(ex, problemDetail, new HttpHeaders(), status, request);
+    }
+
+    private HttpStatus statusOf(AuthErrorCode errorCode) {
+        return switch (errorCode) {
+            case UNSUPPORTED_PROVIDER -> HttpStatus.BAD_REQUEST;
+            case INVALID_REFRESH_TOKEN -> HttpStatus.UNAUTHORIZED;
+        };
     }
 
     @Override
