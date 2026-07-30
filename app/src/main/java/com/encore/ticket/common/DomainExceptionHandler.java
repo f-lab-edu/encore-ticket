@@ -2,6 +2,8 @@ package com.encore.ticket.common;
 
 import com.encore.ticket.booking.api.exception.BookingErrorCode;
 import com.encore.ticket.booking.api.exception.BookingException;
+import com.encore.ticket.payment.api.exception.PaymentErrorCode;
+import com.encore.ticket.payment.api.exception.PaymentException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -21,6 +23,24 @@ public class DomainExceptionHandler {
         problemDetail.setProperty("code", ex.errorCode().name());
 
         return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    @ExceptionHandler(PaymentException.class)
+    ResponseEntity<ProblemDetail> handlePaymentException(PaymentException ex) {
+
+        HttpStatus status = statusOf(ex.errorCode());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
+        problemDetail.setProperty("code", ex.errorCode().name());
+
+        return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    private HttpStatus statusOf(PaymentErrorCode errorCode) {
+        return switch (errorCode) {
+            case RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
+            case HOLD_EXPIRED -> HttpStatus.GONE;
+        };
     }
 
     private HttpStatus statusOf(BookingErrorCode errorCode) {
