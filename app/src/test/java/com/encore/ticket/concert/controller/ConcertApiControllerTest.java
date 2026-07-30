@@ -206,7 +206,15 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 상세를_Bearer_헤더와_함께_조회하면_200과_liked_true를_반환한다() {
+    void 좋아요한_콘서트를_Bearer_헤더와_함께_조회하면_200과_liked_true를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                .then()
+                    .statusCode(201);
+
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
