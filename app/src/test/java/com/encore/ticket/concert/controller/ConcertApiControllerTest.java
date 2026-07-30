@@ -43,13 +43,6 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
 
     private static final int DEFAULT_RANKING_LIMIT = 10;
 
-    private static final String BEARER_TOKEN = "Bearer test-token";
-
-    private static final String KST_OFFSET = "+09:00";
-
-    private static final String KST_DATE_TIME_REGEX =
-            "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}" + Pattern.quote(KST_OFFSET);
-
     private static final String DATE_REGEX = "\\d{4}-\\d{2}-\\d{2}";
 
     private static final List<String> STATUS_NAMES = Arrays.stream(ConcertStatus.values())
