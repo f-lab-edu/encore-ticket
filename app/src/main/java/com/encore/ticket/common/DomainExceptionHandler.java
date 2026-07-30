@@ -1,5 +1,7 @@
 package com.encore.ticket.common;
 
+import java.util.List;
+
 import com.encore.ticket.booking.api.exception.BookingErrorCode;
 import com.encore.ticket.booking.api.exception.BookingException;
 import com.encore.ticket.payment.api.exception.PaymentErrorCode;
@@ -34,6 +36,20 @@ public class DomainExceptionHandler {
         problemDetail.setProperty("code", ex.errorCode().name());
 
         return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    @ExceptionHandler(InvalidRequestFieldException.class)
+    ResponseEntity<ProblemDetail> handleInvalidRequestField(InvalidRequestFieldException ex) {
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "요청 값이 유효하지 않습니다.");
+        problemDetail.setProperty("code", "INVALID_REQUEST");
+        problemDetail.setProperty("errors", List.of(new FieldError(ex.field(), ex.getMessage())));
+
+        return ResponseEntity.badRequest().body(problemDetail);
+    }
+
+    private record FieldError(String field, String reason) {
     }
 
     private HttpStatus statusOf(PaymentErrorCode errorCode) {

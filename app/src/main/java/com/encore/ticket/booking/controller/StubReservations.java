@@ -52,8 +52,6 @@ final class StubReservations {
 
     static final long MISSING_RESERVATION_ID = 999L;
 
-    static final int MAX_SEATS_PER_REQUEST = 4;
-
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
     private static final OffsetDateTime HOLD_EXPIRES_AT =

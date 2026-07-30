@@ -14,6 +14,7 @@ import com.encore.ticket.booking.api.exception.ReservationNotOwnedException;
 import com.encore.ticket.booking.api.exception.ReservationCancelledException;
 import com.encore.ticket.booking.api.exception.SeatAlreadyHeldException;
 import com.encore.ticket.catalog.api.dto.PageResponse;
+import com.encore.ticket.common.InvalidRequestFieldException;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -60,7 +61,7 @@ public class ReservationController {
                 throw notFound("존재하지 않는 좌석입니다: " + seatId);
             }
             if (!StubReservations.seatBelongsTo(request.scheduleId(), seatId)) {
-                throw badRequest("회차에 속하지 않는 좌석입니다: " + seatId);
+                throw new InvalidRequestFieldException("seatIds", "회차에 속하지 않는 좌석입니다: " + seatId);
             }
             if (StubReservations.seatTaken(request.scheduleId(), seatId)) {
                 throw new SeatAlreadyHeldException();
@@ -140,9 +141,5 @@ public class ReservationController {
 
     private static ResponseStatusException notFound(String detail) {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, detail);
-    }
-
-    private static ResponseStatusException badRequest(String detail) {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST, detail);
     }
 }
