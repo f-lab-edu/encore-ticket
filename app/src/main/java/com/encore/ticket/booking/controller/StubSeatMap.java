@@ -1,6 +1,7 @@
 package com.encore.ticket.booking.controller;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.encore.ticket.booking.api.dto.SeatMapResponse;
 import com.encore.ticket.booking.api.dto.SeatStatus;
@@ -22,6 +23,12 @@ final class StubSeatMap {
             new StubSeat(6, "S구역", "1열", "1번", "S", S_PRICE, SeatStatus.AVAILABLE));
 
     private StubSeatMap() {
+    }
+
+    static Optional<SeatMapResponse.Seat> seatOf(long scheduleId, long seatId) {
+        return of(scheduleId).seats().stream()
+                .filter(seat -> seat.id() == seatId)
+                .findFirst();
     }
 
     static SeatMapResponse of(long scheduleId) {
