@@ -49,7 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/reservations/{reservationId}").authenticated()
 
                         .requestMatchers(HttpMethod.POST, "/payments/confirm").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/payments/{paymentKey}").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/payments/{orderId}").authenticated()
 
                         .anyRequest().authenticated()
                 );
