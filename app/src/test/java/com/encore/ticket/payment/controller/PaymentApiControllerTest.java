@@ -31,6 +31,8 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
             "paymentKey", "orderId", "paymentStatus", "pollAfterSeconds", "reservationId",
             "amount", "method", "reservationStatus", "approvedAt", "holdId", "failReason");
 
+    private static final String SPEC_PAYMENT_KEY_PREFIX = "tgen_";
+
     private static final List<String> SPEC_PAYMENT_STATUS_NAMES =
             List.of("PENDING", "COMPLETED", "FAILED");
 
@@ -51,6 +53,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("paymentStatus")).isEqualTo("PENDING");
             softly.assertThat(body.get("orderId")).isEqualTo(StubPayments.ACCEPTED_ORDER_ID);
             softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.paymentKeyOf(StubPayments.ACCEPTED_ORDER_ID));
+            softly.assertThat(String.valueOf(body.get("paymentKey"))).startsWith(SPEC_PAYMENT_KEY_PREFIX);
             softly.assertThat(body.get("reservationId")).isNull();
             softly.assertThat(body.get("amount")).isNull();
             softly.assertThat(body.get("method")).isNull();

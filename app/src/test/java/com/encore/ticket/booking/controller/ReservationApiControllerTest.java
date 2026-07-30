@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
@@ -35,6 +36,10 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     private static final long OTHER_SCHEDULE_SEAT_ID = 2021L;
 
     private static final long MISSING_SEAT_ID = 9999L;
+
+    private static final long MISSING_SCHEDULE_SEAT_ID = 9991L;
+
+    private static final List<Long> MAX_ALLOWED_SEAT_IDS = List.of(2011L, 2014L, 2015L, 2016L);
 
     private static final List<String> SPEC_HOLD_FIELDS =
             List.of("holdId", "scheduleId", "seatIds", "totalAmount", "expiresAt");
@@ -181,7 +186,8 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"));
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"))
+                    .body("errors.reason", org.hamcrest.Matchers.hasItem("좌석 ID는 중복될 수 없습니다."));
     }
 
     @Test
@@ -191,7 +197,51 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"));
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"))
+                    .body("errors[0].reason", org.hamcrest.Matchers.not(emptyString()));
+    }
+
+    @Test
+    void 상한인_4좌석을_선점하면_201을_반환한다() {
+        holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, MAX_ALLOWED_SEAT_IDS)
+                .then()
+                    .statusCode(201)
+                    .body("seatIds.size()", equalTo(MAX_ALLOWED_SEAT_IDS.size()));
+    }
+
+    @Test
+    void 없는_회차의_좌석_ID로_선점하면_404를_반환한다() {
+        holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(MISSING_SCHEDULE_SEAT_ID))
+                .then()
+                    .statusCode(404)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("NOT_FOUND"));
+    }
+
+    @Test
+    void 두_INVALID_REQUEST_경로는_같은_응답_형식을_가진다() {
+        JsonPath fromValidation = holdRequest(
+                StubReservations.NEW_IDEMPOTENCY_KEY, List.of(AVAILABLE_SEAT_ID, AVAILABLE_SEAT_ID))
+                .then().statusCode(400).contentType(PROBLEM_JSON)
+                .extract().jsonPath();
+
+        JsonPath fromController = holdRequest(
+                StubReservations.NEW_IDEMPOTENCY_KEY, List.of(OTHER_SCHEDULE_SEAT_ID))
+                .then().statusCode(400).contentType(PROBLEM_JSON)
+                .extract().jsonPath();
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(fromValidation.getMap("$").keySet())
+                    .isEqualTo(fromController.getMap("$").keySet());
+            softly.assertThat(fromValidation.getString("detail"))
+                    .isEqualTo(fromController.getString("detail"));
+            softly.assertThat(fromValidation.getString("title"))
+                    .isEqualTo(fromController.getString("title"));
+            softly.assertThat(fromValidation.getString("code"))
+                    .isEqualTo(fromController.getString("code"));
+            softly.assertThat(fromValidation.getMap("errors[0]").keySet())
+                    .isEqualTo(fromController.getMap("errors[0]").keySet());
+        });
     }
 
     @Test
@@ -645,7 +695,9 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.field", org.hamcrest.Matchers.hasItem("status"));
+                    .body("errors.size()", equalTo(1))
+                    .body("errors[0].field", equalTo("status"))
+                    .body("errors[0].reason", org.hamcrest.Matchers.not(emptyString()));
     }
 
     @Test
