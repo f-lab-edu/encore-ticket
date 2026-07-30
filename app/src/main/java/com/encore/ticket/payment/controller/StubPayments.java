@@ -73,7 +73,7 @@ final class StubPayments {
         }
 
         return new PaymentConfirmResponse(
-                paymentKey,
+                PAYMENT_KEY,
                 orderId,
                 PaymentStatus.COMPLETED,
                 payment.reservationId(),
