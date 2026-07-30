@@ -81,11 +81,20 @@ final class StubConcertCatalog {
     }
 
     static ConcertLikeResponse unlike(long concertId, long memberId) {
-        if (likedConcerts(memberId).remove(concertId)) {
-            LIKE_COUNTS.merge(concertId, -1, Integer::sum);
+        Set<Long> likedConcerts = LIKES.get(memberId);
+        if (likedConcerts != null && likedConcerts.remove(concertId)) {
+            LIKE_COUNTS.computeIfPresent(concertId, (id, likeCount) -> likeCount - 1);
         }
 
         return likeResponse(concertId, false);
+    }
+
+    static void reset() {
+        LIKE_COUNTS.clear();
+        LIKE_COUNTS.putAll(createLikeCounts());
+
+        LIKES.clear();
+        LIKES.putAll(createLikes());
     }
 
     private static boolean isLiked(long concertId, Long memberId) {
