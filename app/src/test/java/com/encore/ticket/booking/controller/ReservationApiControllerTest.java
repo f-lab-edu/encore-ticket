@@ -171,7 +171,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors", notNullValue());
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"));
     }
 
     @Test
@@ -181,16 +181,17 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors", notNullValue());
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"));
     }
 
     @Test
-    void 다른_회차의_좌석을_선점하면_400을_반환한다() {
+    void 다른_회차의_좌석을_선점하면_400과_INVALID_REQUEST를_반환한다() {
         holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(OTHER_SCHEDULE_SEAT_ID))
                 .then()
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("BAD_REQUEST"));
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("seatIds"));
     }
 
     @Test
@@ -643,7 +644,8 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("INVALID_REQUEST"));
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("status"));
     }
 
     @Test

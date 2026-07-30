@@ -19,6 +19,8 @@ class QueueApiControllerTest extends ApiSpecTestSupport {
 
     private static final String QUEUE_TOKEN_HEADER = "X-Queue-Token";
 
+    private static final int MAX_LAPSES = 2;
+
     private static final List<String> SPEC_TOKEN_FIELDS = List.of(
             "queueToken", "scheduleId", "status", "position",
             "estimatedWaitSeconds", "pollAfterSeconds", "resumed", "lapsesRemaining");
@@ -46,6 +48,7 @@ class QueueApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("position")).isInstanceOf(Integer.class);
             softly.assertThat(body.get("resumed")).isInstanceOf(Boolean.class);
             softly.assertThat(body.get("lapsesRemaining")).isInstanceOf(Integer.class);
+            softly.assertThat((Integer) body.get("lapsesRemaining")).isBetween(0, MAX_LAPSES);
         });
     }
 
