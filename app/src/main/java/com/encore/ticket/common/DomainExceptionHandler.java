@@ -25,7 +25,10 @@ public class DomainExceptionHandler {
 
     private HttpStatus statusOf(BookingErrorCode errorCode) {
         return switch (errorCode) {
-            case QUEUE_NOT_ADMITTED -> HttpStatus.FORBIDDEN;
+            case QUEUE_NOT_ADMITTED, HOLD_NOT_OWNED -> HttpStatus.FORBIDDEN;
+            case SEAT_ALREADY_HELD, IDEMPOTENCY_KEY_REUSED,
+                 PURCHASE_LIMIT_EXCEEDED, RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
+            case HOLD_EXPIRED -> HttpStatus.GONE;
         };
     }
 }
