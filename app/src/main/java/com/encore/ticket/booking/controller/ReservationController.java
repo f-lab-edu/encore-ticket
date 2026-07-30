@@ -10,6 +10,7 @@ import com.encore.ticket.booking.api.exception.HoldNotOwnedException;
 import com.encore.ticket.booking.api.exception.IdempotencyKeyReusedException;
 import com.encore.ticket.booking.api.exception.PurchaseLimitExceededException;
 import com.encore.ticket.booking.api.exception.QueueNotAdmittedException;
+import com.encore.ticket.booking.api.exception.ReservationNotOwnedException;
 import com.encore.ticket.booking.api.exception.ReservationCancelledException;
 import com.encore.ticket.booking.api.exception.SeatAlreadyHeldException;
 import com.encore.ticket.catalog.api.dto.PageResponse;
@@ -111,7 +112,7 @@ public class ReservationController {
             throw reservationNotFound(reservationId);
         }
         if (!StubReservations.ownedByStubMember(reservationId)) {
-            throw forbidden();
+            throw new ReservationNotOwnedException();
         }
 
         return StubReservations.detail(reservationId)
@@ -127,7 +128,7 @@ public class ReservationController {
             throw reservationNotFound(reservationId);
         }
         if (!StubReservations.ownedByStubMember(reservationId)) {
-            throw forbidden();
+            throw new ReservationNotOwnedException();
         }
 
         return StubReservations.cancel(reservationId);
@@ -143,9 +144,5 @@ public class ReservationController {
 
     private static ResponseStatusException badRequest(String detail) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, detail);
-    }
-
-    private static ResponseStatusException forbidden() {
-        return new ResponseStatusException(HttpStatus.FORBIDDEN, "다른 사용자의 예매입니다.");
     }
 }

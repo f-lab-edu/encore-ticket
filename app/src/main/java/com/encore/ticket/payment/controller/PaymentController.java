@@ -2,8 +2,12 @@ package com.encore.ticket.payment.controller;
 
 import com.encore.ticket.payment.api.dto.PaymentConfirmResponse;
 import com.encore.ticket.payment.api.dto.PaymentResultResponse;
+import com.encore.ticket.payment.api.exception.AmountMismatchException;
 import com.encore.ticket.payment.api.exception.CancelledReservationException;
 import com.encore.ticket.payment.api.exception.ExpiredReservationException;
+import com.encore.ticket.payment.api.exception.OrderIdAlreadyBoundException;
+import com.encore.ticket.payment.api.exception.PaymentKeyReusedException;
+import com.encore.ticket.payment.api.exception.ReservationNotOwnedException;
 
 import jakarta.validation.Valid;
 
@@ -29,7 +33,7 @@ public class PaymentController {
             throw notFound(orderId);
         }
         if (!StubPayments.ownedByStubMember(orderId)) {
-            throw forbidden();
+            throw new ReservationNotOwnedException();
         }
         if ("CANCELLED".equals(StubPayments.reservationStatusOf(orderId))) {
             throw new CancelledReservationException();
@@ -37,24 +41,28 @@ public class PaymentController {
         if ("EXPIRED".equals(StubPayments.reservationStatusOf(orderId))) {
             throw new ExpiredReservationException();
         }
+        if (!StubPayments.paymentKeyOf(orderId).equals(request.paymentKey())) {
+            if (StubPayments.paymentKeyBoundToOtherOrder(request.paymentKey(), orderId)) {
+                throw new PaymentKeyReusedException();
+            }
+            throw new OrderIdAlreadyBoundException();
+        }
         if (request.amount() != StubPayments.EXPECTED_AMOUNT) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "요청 금액이 예매 금액과 다릅니다: " + request.amount());
+            throw new AmountMismatchException();
         }
 
-        PaymentConfirmResponse response = StubPayments.confirm(request.paymentKey(), orderId);
-        HttpStatus status = StubPayments.alreadyCompleted(orderId) ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        HttpStatus status = StubPayments.settled(orderId) ? HttpStatus.OK : HttpStatus.ACCEPTED;
 
-        return ResponseEntity.status(status).body(response);
+        return ResponseEntity.status(status).body(StubPayments.confirm(orderId));
     }
 
     @GetMapping("/{orderId}")
     PaymentResultResponse result(@PathVariable("orderId") String orderId) {
-        if (!StubPayments.exists(orderId)) {
-            throw notFound(orderId);
-        }
         if (!StubPayments.ownedByStubMember(orderId)) {
-            throw forbidden();
+            if (StubPayments.exists(orderId)) {
+                throw new ReservationNotOwnedException();
+            }
+            throw notFound(orderId);
         }
 
         return StubPayments.result(orderId).orElseThrow(() -> notFound(orderId));
@@ -62,9 +70,5 @@ public class PaymentController {
 
     private static ResponseStatusException notFound(String orderId) {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 주문입니다: " + orderId);
-    }
-
-    private static ResponseStatusException forbidden() {
-        return new ResponseStatusException(HttpStatus.FORBIDDEN, "다른 사용자의 결제입니다.");
     }
 }
