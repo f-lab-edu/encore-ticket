@@ -6,6 +6,7 @@ import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
 import io.restassured.response.Response;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,6 +34,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     private static final long MISSING_CONCERT_ID = 999L;
     private static final long NOTICE_LESS_CONCERT_ID = 2L;
 
+    private static final long LIKE_AUTH_CONCERT_ID = 5L;
     private static final long NEW_LIKE_CONCERT_ID = 6L;
     private static final long REPEAT_LIKE_CONCERT_ID = 7L;
     private static final long CANCEL_LIKE_CONCERT_ID = 8L;
@@ -51,6 +53,11 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
 
     private static final List<String> SPEC_STATUS_NAMES =
             List.of("UPCOMING", "ON_SALE", "CLOSED", "SOLD_OUT", "CANCELLED");
+
+    @BeforeEach
+    void resetLikeState() {
+        StubConcertCatalog.reset();
+    }
 
     @Test
     void 목록을_기본_파라미터로_조회하면_스펙대로_페이지_응답을_반환한다() {
@@ -694,7 +701,9 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 좋아요를_처음_등록하면_201과_스펙에_정의된_3개_필드를_반환한다() {
+    void 좋아요를_처음_등록하면_201과_likeCount가_1_증가한_3개_필드를_반환한다() {
+        int likeCountBefore = detailOf(NEW_LIKE_CONCERT_ID).getInt("likeCount");
+
         Map<String, Object> body = RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
@@ -709,7 +718,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body).containsOnlyKeys("concertId", "liked", "likeCount");
             softly.assertThat(body.get("concertId")).isEqualTo((int) NEW_LIKE_CONCERT_ID);
             softly.assertThat(body.get("liked")).isEqualTo(true);
-            softly.assertThat(body.get("likeCount")).isInstanceOf(Integer.class);
+            softly.assertThat(body.get("likeCount")).isEqualTo(likeCountBefore + 1);
         });
     }
 
@@ -724,15 +733,21 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(201)
                 .extract().jsonPath().getInt("likeCount");
 
-        RestAssured
+        Map<String, Object> body = RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
                 .when()
                     .post("/concerts/{concertId}/likes", REPEAT_LIKE_CONCERT_ID)
                 .then()
                     .statusCode(200)
-                    .body("liked", equalTo(true))
-                    .body("likeCount", equalTo(likeCountAfterFirst));
+                    .contentType(ContentType.JSON)
+                .extract().jsonPath().getMap("$");
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body).containsOnlyKeys("concertId", "liked", "likeCount");
+            softly.assertThat(body.get("liked")).isEqualTo(true);
+            softly.assertThat(body.get("likeCount")).isEqualTo(likeCountAfterFirst);
+        });
     }
 
     @Test
@@ -761,6 +776,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("concertId")).isEqualTo((int) CANCEL_LIKE_CONCERT_ID);
             softly.assertThat(body.get("liked")).isEqualTo(false);
             softly.assertThat(body.get("likeCount")).isEqualTo(likeCountWhenLiked - 1);
+            softly.assertThat((Integer) body.get("likeCount")).isNotNegative();
         });
     }
 
@@ -768,15 +784,22 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     void 좋아요한_적_없는_상태에서_취소해도_200이고_likeCount가_변하지_않는다() {
         int likeCountBefore = detailOf(IDEMPOTENT_CANCEL_CONCERT_ID).getInt("likeCount");
 
-        RestAssured
+        Map<String, Object> body = RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
                 .when()
                     .delete("/concerts/{concertId}/likes", IDEMPOTENT_CANCEL_CONCERT_ID)
                 .then()
                     .statusCode(200)
-                    .body("liked", equalTo(false))
-                    .body("likeCount", equalTo(likeCountBefore));
+                    .contentType(ContentType.JSON)
+                .extract().jsonPath().getMap("$");
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body).containsOnlyKeys("concertId", "liked", "likeCount");
+            softly.assertThat(body.get("liked")).isEqualTo(false);
+            softly.assertThat(body.get("likeCount")).isEqualTo(likeCountBefore);
+            softly.assertThat((Integer) body.get("likeCount")).isNotNegative();
+        });
     }
 
     @Test
@@ -818,7 +841,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                 .when()
-                    .post("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                    .post("/concerts/{concertId}/likes", LIKE_AUTH_CONCERT_ID)
                 .then()
                     .statusCode(401)
                     .contentType(PROBLEM_JSON)
@@ -830,7 +853,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                 .when()
-                    .delete("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                    .delete("/concerts/{concertId}/likes", LIKE_AUTH_CONCERT_ID)
                 .then()
                     .statusCode(401)
                     .contentType(PROBLEM_JSON)
@@ -847,6 +870,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(404)
                     .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(404))
                     .body("code", equalTo("NOT_FOUND"))
                     .body("instance", equalTo("/concerts/" + MISSING_CONCERT_ID + "/likes"));
     }
@@ -861,6 +885,7 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(404)
                     .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(404))
                     .body("code", equalTo("NOT_FOUND"))
                     .body("instance", equalTo("/concerts/" + MISSING_CONCERT_ID + "/likes"));
     }
