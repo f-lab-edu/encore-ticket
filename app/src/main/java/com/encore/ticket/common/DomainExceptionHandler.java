@@ -38,14 +38,17 @@ public class DomainExceptionHandler {
 
     private HttpStatus statusOf(PaymentErrorCode errorCode) {
         return switch (errorCode) {
-            case RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
+            case AMOUNT_MISMATCH -> HttpStatus.BAD_REQUEST;
+            case RESERVATION_NOT_OWNED -> HttpStatus.FORBIDDEN;
+            case PAYMENT_KEY_REUSED, ORDER_ID_ALREADY_BOUND,
+                 RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
             case HOLD_EXPIRED -> HttpStatus.GONE;
         };
     }
 
     private HttpStatus statusOf(BookingErrorCode errorCode) {
         return switch (errorCode) {
-            case QUEUE_NOT_ADMITTED, HOLD_NOT_OWNED -> HttpStatus.FORBIDDEN;
+            case QUEUE_NOT_ADMITTED, HOLD_NOT_OWNED, RESERVATION_NOT_OWNED -> HttpStatus.FORBIDDEN;
             case SEAT_ALREADY_HELD, IDEMPOTENCY_KEY_REUSED,
                  PURCHASE_LIMIT_EXCEEDED, RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
             case HOLD_EXPIRED -> HttpStatus.GONE;
