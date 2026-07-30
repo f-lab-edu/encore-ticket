@@ -12,6 +12,7 @@ import org.assertj.core.api.SoftAssertions;
 import org.springframework.http.HttpHeaders;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -31,7 +32,9 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
 
     private static final long HELD_SEAT_ID = 2012L;
 
-    private static final long FOREIGN_SEAT_ID = 9999L;
+    private static final long OTHER_SCHEDULE_SEAT_ID = 2021L;
+
+    private static final long MISSING_SEAT_ID = 9999L;
 
     private static final List<String> SPEC_HOLD_FIELDS =
             List.of("holdId", "scheduleId", "seatIds", "totalAmount", "expiresAt");
@@ -72,17 +75,31 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 선점_응답의_totalAmount는_좌석_가격의_합이다() {
-        int onePrice = holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(AVAILABLE_SEAT_ID))
+    void 선점_응답의_totalAmount는_좌석_배치도_가격의_합과_정확히_같다() {
+        List<Long> seatIds = List.of(AVAILABLE_SEAT_ID, OTHER_AVAILABLE_SEAT_ID);
+
+        JsonPath seatMap = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                .when()
+                    .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
+                .then()
+                    .statusCode(200)
+                .extract().jsonPath();
+
+        long expected = seatIds.stream()
+                .mapToLong(seatId -> seatMap.getLong("seats.find { it.id == %d }.price".formatted(seatId)))
+                .sum();
+
+        int totalAmount = holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, seatIds)
                 .then().statusCode(201)
                 .extract().jsonPath().getInt("totalAmount");
 
-        int twoPrice = holdRequest(
-                StubReservations.NEW_IDEMPOTENCY_KEY, List.of(AVAILABLE_SEAT_ID, OTHER_AVAILABLE_SEAT_ID))
-                .then().statusCode(201)
-                .extract().jsonPath().getInt("totalAmount");
-
-        assertThat(twoPrice).isGreaterThan(onePrice);
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(expected).isPositive();
+            softly.assertThat((long) totalAmount).isEqualTo(expected);
+        });
     }
 
     @Test
@@ -168,12 +185,22 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 회차에_속하지_않는_좌석을_선점하면_400을_반환한다() {
-        holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(FOREIGN_SEAT_ID))
+    void 다른_회차의_좌석을_선점하면_400을_반환한다() {
+        holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(OTHER_SCHEDULE_SEAT_ID))
                 .then()
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("BAD_REQUEST"));
+    }
+
+    @Test
+    void 존재하지_않는_좌석을_선점하면_404를_반환한다() {
+        holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, List.of(MISSING_SEAT_ID))
+                .then()
+                    .statusCode(404)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(404))
+                    .body("code", equalTo("NOT_FOUND"));
     }
 
     @Test
@@ -265,7 +292,61 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("orderId"))
                     .isEqualTo("reservation-" + StubReservations.PENDING_RESERVATION_ID + "-1");
             softly.assertThat(body.get("amount")).isInstanceOf(Integer.class);
+            softly.assertThat((Integer) body.get("amount")).isPositive();
+            softly.assertThat(String.valueOf(body.get("expiresAt"))).matches(KST_DATE_TIME_REGEX);
+            softly.assertThat(String.valueOf(body.get("originalExpiresAt"))).matches(KST_DATE_TIME_REGEX);
         });
+    }
+
+    @ParameterizedTest(name = "{0} 누락")
+    @ValueSource(strings = {"scheduleId", "seatIds"})
+    void 선점_요청에_필수_필드가_없으면_400과_INVALID_REQUEST를_반환한다(String omittedField) {
+        Map<String, Object> body = new java.util.HashMap<>(holdBody(List.of(AVAILABLE_SEAT_ID)));
+        body.remove(omittedField);
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
+                    .body(body)
+                .when()
+                    .post("/reservations/holds")
+                .then()
+                    .statusCode(400)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", org.hamcrest.Matchers.hasItem(omittedField));
+    }
+
+    @Test
+    void 예매_생성_요청에_holdId가_없으면_400과_INVALID_REQUEST를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of())
+                .when()
+                    .post("/reservations")
+                .then()
+                    .statusCode(400)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("holdId"));
+    }
+
+    @Test
+    void 취소_요청에_status가_없으면_400과_INVALID_REQUEST를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of())
+                .when()
+                    .patch("/reservations/{reservationId}", StubReservations.PENDING_RESERVATION_ID)
+                .then()
+                    .statusCode(400)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", org.hamcrest.Matchers.hasItem("status"));
     }
 
     @Test
@@ -379,6 +460,48 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                 .extract().jsonPath().getList("content.id", Integer.class);
 
         assertThat(ids).doesNotContain((int) StubReservations.OTHER_MEMBER_RESERVATION_ID);
+    }
+
+    @Test
+    void 예매_목록의_페이지는_전체_목록의_해당_구간과_같고_순서가_유지된다() {
+        List<Integer> all = reservationIds(0, 100);
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(all).hasSizeGreaterThanOrEqualTo(3);
+            softly.assertThat(all).isSortedAccordingTo(Comparator.reverseOrder());
+            softly.assertThat(reservationIds(0, 2)).isEqualTo(all.subList(0, 2));
+            softly.assertThat(reservationIds(1, 2)).isEqualTo(all.subList(2, Math.min(4, all.size())));
+        });
+    }
+
+    @Test
+    void 예매_목록의_totalElements와_totalPages는_실제_건수를_반영한다() {
+        JsonPath onePage = reservationPage(0, 100);
+        int total = onePage.getList("content").size();
+
+        JsonPath split = reservationPage(0, 2);
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(onePage.getInt("totalElements")).isEqualTo(total);
+            softly.assertThat(onePage.getInt("totalPages")).isEqualTo(1);
+            softly.assertThat(split.getInt("totalElements")).isEqualTo(total);
+            softly.assertThat(split.getInt("totalPages")).isEqualTo((total + 1) / 2);
+            softly.assertThat(split.getList("content")).hasSize(2);
+        });
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"page=-1", "size=0", "size=abc"})
+    void 예매_목록의_페이지_파라미터가_유효하지_않으면_400을_반환한다(String query) {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .get("/reservations?" + query)
+                .then()
+                    .statusCode(400)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("BAD_REQUEST"));
     }
 
     @Test
@@ -564,6 +687,23 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .hasSize(SPEC_RESERVATION_STATUS_NAMES.size())
                     .containsExactlyInAnyOrderElementsOf(SPEC_RESERVATION_STATUS_NAMES);
         });
+    }
+
+    private JsonPath reservationPage(int page, int size) {
+        return RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .queryParam("page", page)
+                    .queryParam("size", size)
+                .when()
+                    .get("/reservations")
+                .then()
+                    .statusCode(200)
+                .extract().jsonPath();
+    }
+
+    private List<Integer> reservationIds(int page, int size) {
+        return reservationPage(page, size).getList("content.id", Integer.class);
     }
 
     private Map<String, Object> holdBody(List<Long> seatIds) {

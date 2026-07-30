@@ -6,15 +6,20 @@ import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.assertj.core.api.SoftAssertions;
 import org.springframework.http.HttpHeaders;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
 
 class PaymentApiControllerTest extends ApiSpecTestSupport {
 
@@ -66,11 +71,37 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(body).containsOnlyKeys(SPEC_CONFIRM_FIELDS.toArray(String[]::new));
             softly.assertThat(body.get("paymentStatus")).isEqualTo("COMPLETED");
+            softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.PAYMENT_KEY);
             softly.assertThat(body.get("reservationStatus")).isEqualTo("CONFIRMED");
             softly.assertThat(body.get("reservationId")).isInstanceOf(Integer.class);
             softly.assertThat(body.get("amount")).isEqualTo((int) StubPayments.EXPECTED_AMOUNT);
             softly.assertThat(body.get("method")).isInstanceOf(String.class);
             softly.assertThat(String.valueOf(body.get("approvedAt"))).matches(KST_DATE_TIME_REGEX);
+        });
+    }
+
+    @Test
+    void 완료된_요청의_200_응답은_요청값이_아니라_저장된_paymentKey를_반환한다() {
+        String requestedKey = "tgen_CLIENT_SUPPLIED_KEY";
+
+        String returnedKey = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of(
+                            "paymentKey", requestedKey,
+                            "orderId", StubPayments.COMPLETED_ORDER_ID,
+                            "amount", StubPayments.EXPECTED_AMOUNT))
+                .when()
+                    .post("/payments/confirm")
+                .then()
+                    .statusCode(200)
+                .extract().jsonPath().getString("paymentKey");
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(returnedKey).isNotEqualTo(requestedKey);
+            softly.assertThat(returnedKey).isEqualTo(StubPayments.PAYMENT_KEY);
+            softly.assertThat(returnedKey).isEqualTo(
+                    resultOf(StubPayments.COMPLETED_ORDER_ID).get("paymentKey"));
         });
     }
 
@@ -136,18 +167,38 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
                     .body("code", equalTo("NOT_FOUND"));
     }
 
-    @Test
-    void 결제_승인_요청_바디가_비면_400과_INVALID_REQUEST를_반환한다() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidConfirmBodies")
+    void 결제_승인_요청_필드가_유효하지_않으면_400과_INVALID_REQUEST를_반환한다(
+            String label, Map<String, Object> body, String expectedField) {
+
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .body(Map.of("paymentKey", "", "orderId", "", "amount", 0))
+                    .body(body)
                 .when()
                     .post("/payments/confirm")
                 .then()
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("INVALID_REQUEST"));
+                    .body("code", equalTo("INVALID_REQUEST"))
+                    .body("errors.field", hasItem(expectedField));
+    }
+
+    private static Stream<Arguments> invalidConfirmBodies() {
+        String key = StubPayments.PAYMENT_KEY;
+        String orderId = StubPayments.ACCEPTED_ORDER_ID;
+        long amount = StubPayments.EXPECTED_AMOUNT;
+
+        return Stream.of(
+                Arguments.of("paymentKey 공백",
+                        Map.of("paymentKey", "", "orderId", orderId, "amount", amount), "paymentKey"),
+                Arguments.of("orderId 공백",
+                        Map.of("paymentKey", key, "orderId", "", "amount", amount), "orderId"),
+                Arguments.of("amount 누락",
+                        Map.of("paymentKey", key, "orderId", orderId), "amount"),
+                Arguments.of("amount 0",
+                        Map.of("paymentKey", key, "orderId", orderId, "amount", 0), "amount"));
     }
 
     @Test
@@ -173,6 +224,10 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("pollAfterSeconds")).isInstanceOf(Integer.class);
             softly.assertThat(body.get("reservationId")).isNull();
             softly.assertThat(body.get("amount")).isNull();
+            softly.assertThat(body.get("method")).isNull();
+            softly.assertThat(body.get("reservationStatus")).isNull();
+            softly.assertThat(body.get("approvedAt")).isNull();
+            softly.assertThat(body.get("holdId")).isNull();
             softly.assertThat(body.get("failReason")).isNull();
         });
     }
@@ -203,7 +258,10 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body.get("failReason")).isInstanceOf(String.class);
             softly.assertThat(body.get("holdId")).isInstanceOf(String.class);
             softly.assertThat(body.get("reservationId")).isInstanceOf(Integer.class);
+            softly.assertThat(body.get("pollAfterSeconds")).isNull();
             softly.assertThat(body.get("amount")).isNull();
+            softly.assertThat(body.get("method")).isNull();
+            softly.assertThat(body.get("reservationStatus")).isNull();
             softly.assertThat(body.get("approvedAt")).isNull();
         });
     }
@@ -228,7 +286,6 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
                 String.valueOf(resultOf(StubPayments.FAILED_ORDER_ID).get("paymentStatus")));
 
         assertThat(statuses)
-                .hasSize(3)
                 .allSatisfy(status -> assertThat(SPEC_PAYMENT_STATUS_NAMES).contains(status));
     }
 
