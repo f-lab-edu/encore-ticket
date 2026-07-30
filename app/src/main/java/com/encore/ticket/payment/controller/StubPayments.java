@@ -2,6 +2,7 @@ package com.encore.ticket.payment.controller;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -133,7 +134,7 @@ final class StubPayments {
                 createPayment(EXPIRED_ORDER_ID, 505L, PaymentStatus.PENDING, "EXPIRED", true));
         payments.put(FAILED_ORDER_ID,
                 createPayment(FAILED_ORDER_ID, 506L, PaymentStatus.FAILED, "PENDING_PAYMENT", true));
-        return java.util.Collections.unmodifiableMap(payments);
+        return Collections.unmodifiableMap(payments);
     }
 
     private static StubPayment createPayment(
