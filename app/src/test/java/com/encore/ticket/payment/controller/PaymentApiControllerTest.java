@@ -50,7 +50,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
             softly.assertThat(body).containsOnlyKeys(SPEC_CONFIRM_FIELDS.toArray(String[]::new));
             softly.assertThat(body.get("paymentStatus")).isEqualTo("PENDING");
             softly.assertThat(body.get("orderId")).isEqualTo(StubPayments.ACCEPTED_ORDER_ID);
-            softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.PAYMENT_KEY);
+            softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.paymentKeyOf(StubPayments.ACCEPTED_ORDER_ID));
             softly.assertThat(body.get("reservationId")).isNull();
             softly.assertThat(body.get("amount")).isNull();
             softly.assertThat(body.get("method")).isNull();
@@ -71,7 +71,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(body).containsOnlyKeys(SPEC_CONFIRM_FIELDS.toArray(String[]::new));
             softly.assertThat(body.get("paymentStatus")).isEqualTo("COMPLETED");
-            softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.PAYMENT_KEY);
+            softly.assertThat(body.get("paymentKey")).isEqualTo(StubPayments.paymentKeyOf(StubPayments.COMPLETED_ORDER_ID));
             softly.assertThat(body.get("reservationStatus")).isEqualTo("CONFIRMED");
             softly.assertThat(body.get("reservationId")).isInstanceOf(Integer.class);
             softly.assertThat(body.get("amount")).isEqualTo((int) StubPayments.EXPECTED_AMOUNT);
@@ -81,27 +81,56 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 완료된_요청의_200_응답은_요청값이_아니라_저장된_paymentKey를_반환한다() {
-        String requestedKey = "tgen_CLIENT_SUPPLIED_KEY";
-
-        String returnedKey = RestAssured
+    void 다른_결제_키로_승인하면_409와_ORDER_ID_ALREADY_BOUND를_반환한다() {
+        RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
                     .body(Map.of(
-                            "paymentKey", requestedKey,
+                            "paymentKey", StubPayments.UNKNOWN_PAYMENT_KEY,
                             "orderId", StubPayments.COMPLETED_ORDER_ID,
                             "amount", StubPayments.EXPECTED_AMOUNT))
                 .when()
                     .post("/payments/confirm")
                 .then()
+                    .statusCode(409)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(409))
+                    .body("code", equalTo("ORDER_ID_ALREADY_BOUND"));
+    }
+
+    @Test
+    void 다른_주문의_결제_키로_승인하면_409와_PAYMENT_KEY_REUSED를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of(
+                            "paymentKey", StubPayments.paymentKeyOf(StubPayments.ACCEPTED_ORDER_ID),
+                            "orderId", StubPayments.COMPLETED_ORDER_ID,
+                            "amount", StubPayments.EXPECTED_AMOUNT))
+                .when()
+                    .post("/payments/confirm")
+                .then()
+                    .statusCode(409)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("PAYMENT_KEY_REUSED"));
+    }
+
+    @Test
+    void 실패한_결제를_다시_승인하면_200과_FAILED를_그대로_반환한다() {
+        Map<String, Object> confirmed = confirmRequest(
+                StubPayments.FAILED_ORDER_ID, StubPayments.EXPECTED_AMOUNT)
+                .then()
                     .statusCode(200)
-                .extract().jsonPath().getString("paymentKey");
+                    .contentType(ContentType.JSON)
+                .extract().jsonPath().getMap("$");
 
         SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(returnedKey).isNotEqualTo(requestedKey);
-            softly.assertThat(returnedKey).isEqualTo(StubPayments.PAYMENT_KEY);
-            softly.assertThat(returnedKey).isEqualTo(
-                    resultOf(StubPayments.COMPLETED_ORDER_ID).get("paymentKey"));
+            softly.assertThat(confirmed).containsOnlyKeys(SPEC_CONFIRM_FIELDS.toArray(String[]::new));
+            softly.assertThat(confirmed.get("paymentStatus")).isEqualTo("FAILED");
+            softly.assertThat(confirmed.get("paymentStatus"))
+                    .isEqualTo(resultOf(StubPayments.FAILED_ORDER_ID).get("paymentStatus"));
+            softly.assertThat(confirmed.get("amount")).isNull();
+            softly.assertThat(confirmed.get("approvedAt")).isNull();
         });
     }
 
@@ -125,7 +154,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("status", equalTo(400))
-                    .body("code", equalTo("BAD_REQUEST"));
+                    .body("code", equalTo("AMOUNT_MISMATCH"));
     }
 
     @Test
@@ -155,12 +184,20 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(403)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("FORBIDDEN"));
+                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
     }
 
     @Test
     void 없는_주문을_결제_승인하면_404를_반환한다() {
-        confirmRequest(StubPayments.MISSING_ORDER_ID, StubPayments.EXPECTED_AMOUNT)
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of(
+                            "paymentKey", StubPayments.UNKNOWN_PAYMENT_KEY,
+                            "orderId", StubPayments.MISSING_ORDER_ID,
+                            "amount", StubPayments.EXPECTED_AMOUNT))
+                .when()
+                    .post("/payments/confirm")
                 .then()
                     .statusCode(404)
                     .contentType(PROBLEM_JSON)
@@ -186,7 +223,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
     }
 
     private static Stream<Arguments> invalidConfirmBodies() {
-        String key = StubPayments.PAYMENT_KEY;
+        String key = StubPayments.paymentKeyOf(StubPayments.ACCEPTED_ORDER_ID);
         String orderId = StubPayments.ACCEPTED_ORDER_ID;
         long amount = StubPayments.EXPECTED_AMOUNT;
 
@@ -299,7 +336,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(403)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("FORBIDDEN"));
+                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
     }
 
     @Test
@@ -349,7 +386,7 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
 
     private Map<String, Object> confirmBody(String orderId, long amount) {
         return Map.of(
-                "paymentKey", StubPayments.PAYMENT_KEY,
+                "paymentKey", StubPayments.paymentKeyOf(orderId),
                 "orderId", orderId,
                 "amount", amount);
     }

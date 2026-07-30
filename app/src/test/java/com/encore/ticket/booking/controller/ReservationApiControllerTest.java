@@ -594,7 +594,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(403)
                     .contentType(PROBLEM_JSON)
                     .body("status", equalTo(403))
-                    .body("code", equalTo("FORBIDDEN"));
+                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
     }
 
     @Test
@@ -652,7 +652,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                 .then()
                     .statusCode(403)
                     .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("FORBIDDEN"));
+                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
     }
 
     @Test
