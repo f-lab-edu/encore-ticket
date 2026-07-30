@@ -1,6 +1,7 @@
 package com.encore.ticket.concert.controller;
 
 import com.encore.ticket.catalog.api.dto.ConcertDetailResponse;
+import com.encore.ticket.catalog.api.dto.ConcertLikeResponse;
 import com.encore.ticket.catalog.api.dto.ConcertRankingResponse;
 import com.encore.ticket.catalog.api.dto.ConcertStatus;
 import com.encore.ticket.catalog.api.dto.ConcertSummaryResponse;
@@ -14,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class StubConcertCatalog {
 
@@ -27,7 +30,15 @@ final class StubConcertCatalog {
 
     private static final long BASE_MIN_PRICE = 77_000L;
 
+    private static final long SEEDED_LIKE_MEMBER_ID = 1L;
+
+    private static final long SEEDED_LIKE_CONCERT_ID = 1L;
+
     private static final Map<Long, StubConcert> CONCERTS = createConcerts();
+
+    private static final Map<Long, Integer> LIKE_COUNTS = createLikeCounts();
+
+    private static final Map<Long, Set<Long>> LIKES = createLikes();
 
     private StubConcertCatalog() {
     }
@@ -46,9 +57,9 @@ final class StubConcertCatalog {
         return new PageResponse<>(content, page, size, CONCERT_COUNT, totalPages(size));
     }
 
-    static Optional<ConcertDetailResponse> detail(long concertId, boolean liked) {
+    static Optional<ConcertDetailResponse> detail(long concertId, Long memberId) {
         return Optional.ofNullable(CONCERTS.get(concertId))
-                .map(concert -> toDetail(concert, liked));
+                .map(concert -> toDetail(concert, isLiked(concert.id(), memberId)));
     }
 
     static ConcertRankingResponse ranking(int limit) {
@@ -58,6 +69,39 @@ final class StubConcertCatalog {
                 .toList();
 
         return new ConcertRankingResponse(RANKING_AS_OF, items);
+    }
+
+    static LikeResult like(long concertId, long memberId) {
+        boolean created = likedConcerts(memberId).add(concertId);
+        if (created) {
+            LIKE_COUNTS.merge(concertId, 1, Integer::sum);
+        }
+
+        return new LikeResult(created, likeResponse(concertId, true));
+    }
+
+    static ConcertLikeResponse unlike(long concertId, long memberId) {
+        if (likedConcerts(memberId).remove(concertId)) {
+            LIKE_COUNTS.merge(concertId, -1, Integer::sum);
+        }
+
+        return likeResponse(concertId, false);
+    }
+
+    private static boolean isLiked(long concertId, Long memberId) {
+        return memberId != null && LIKES.getOrDefault(memberId, Set.of()).contains(concertId);
+    }
+
+    private static Set<Long> likedConcerts(long memberId) {
+        return LIKES.computeIfAbsent(memberId, id -> ConcurrentHashMap.newKeySet());
+    }
+
+    private static ConcertLikeResponse likeResponse(long concertId, boolean liked) {
+        return new ConcertLikeResponse(concertId, liked, likeCountOf(concertId));
+    }
+
+    private static int likeCountOf(long concertId) {
+        return LIKE_COUNTS.getOrDefault(concertId, 0);
     }
 
     private static int totalPages(int size) {
@@ -85,7 +129,7 @@ final class StubConcertCatalog {
                 concert.notice(),
                 concert.posterUrl(),
                 concert.venue(),
-                concert.likeCount(),
+                likeCountOf(concert.id()),
                 liked,
                 schedulesOf(concert),
                 pricesOf(concert));
@@ -133,6 +177,21 @@ final class StubConcertCatalog {
         return Collections.unmodifiableMap(concerts);
     }
 
+    private static Map<Long, Integer> createLikeCounts() {
+        Map<Long, Integer> likeCounts = new ConcurrentHashMap<>();
+        CONCERTS.forEach((id, concert) -> likeCounts.put(id, concert.likeCount()));
+        return likeCounts;
+    }
+
+    private static Map<Long, Set<Long>> createLikes() {
+        Set<Long> seeded = ConcurrentHashMap.newKeySet();
+        seeded.add(SEEDED_LIKE_CONCERT_ID);
+
+        Map<Long, Set<Long>> likes = new ConcurrentHashMap<>();
+        likes.put(SEEDED_LIKE_MEMBER_ID, seeded);
+        return likes;
+    }
+
     private static StubConcert createConcert(long id) {
         int index = (int) (id - 1);
         LocalDate startDate = FIRST_PERFORMANCE_DATE.plusWeeks(index);
@@ -151,6 +210,11 @@ final class StubConcertCatalog {
                 statuses[index % statuses.length],
                 BASE_MIN_PRICE + index * 1_000L,
                 100 - index);
+    }
+
+    record LikeResult(
+            boolean created,
+            ConcertLikeResponse response) {
     }
 
     private record StubConcert(

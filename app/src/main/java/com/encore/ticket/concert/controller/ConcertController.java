@@ -1,6 +1,7 @@
 package com.encore.ticket.concert.controller;
 
 import com.encore.ticket.catalog.api.dto.ConcertDetailResponse;
+import com.encore.ticket.catalog.api.dto.ConcertLikeResponse;
 import com.encore.ticket.catalog.api.dto.ConcertRankingResponse;
 import com.encore.ticket.catalog.api.dto.ConcertSummaryResponse;
 import com.encore.ticket.catalog.api.dto.PageResponse;
@@ -11,6 +12,7 @@ import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,7 +43,7 @@ public class ConcertController {
             @PathVariable("concertId") long concertId,
             @AuthenticationPrincipal Long memberId) {
 
-        return StubConcertCatalog.detail(concertId, memberId != null)
+        return StubConcertCatalog.detail(concertId, memberId)
                 .orElseThrow(() -> notFound(concertId));
     }
 
@@ -52,6 +54,34 @@ public class ConcertController {
         }
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{concertId}/likes")
+    ResponseEntity<ConcertLikeResponse> like(
+            @PathVariable("concertId") long concertId,
+            @AuthenticationPrincipal Long memberId) {
+
+        if (!StubConcertCatalog.exists(concertId)) {
+            throw notFound(concertId);
+        }
+
+        StubConcertCatalog.LikeResult result = StubConcertCatalog.like(concertId, memberId);
+
+        return ResponseEntity
+                .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(result.response());
+    }
+
+    @DeleteMapping("/{concertId}/likes")
+    ConcertLikeResponse unlike(
+            @PathVariable("concertId") long concertId,
+            @AuthenticationPrincipal Long memberId) {
+
+        if (!StubConcertCatalog.exists(concertId)) {
+            throw notFound(concertId);
+        }
+
+        return StubConcertCatalog.unlike(concertId, memberId);
     }
 
     private static ResponseStatusException notFound(long concertId) {
