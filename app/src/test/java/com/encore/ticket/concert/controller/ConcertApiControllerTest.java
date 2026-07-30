@@ -33,6 +33,12 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     private static final long MISSING_CONCERT_ID = 999L;
     private static final long NOTICE_LESS_CONCERT_ID = 2L;
 
+    private static final long NEW_LIKE_CONCERT_ID = 6L;
+    private static final long REPEAT_LIKE_CONCERT_ID = 7L;
+    private static final long CANCEL_LIKE_CONCERT_ID = 8L;
+    private static final long IDEMPOTENT_CANCEL_CONCERT_ID = 9L;
+    private static final long LIKE_DETAIL_CONCERT_ID = 10L;
+
     private static final int CONCERT_COUNT = 10;
 
     private static final int DEFAULT_RANKING_LIMIT = 10;
@@ -692,6 +698,178 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("detail", equalTo("요청 값이 유효하지 않습니다."));
+    }
+
+    @Test
+    void 좋아요를_처음_등록하면_201과_스펙에_정의된_3개_필드를_반환한다() {
+        Map<String, Object> body = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", NEW_LIKE_CONCERT_ID)
+                .then()
+                    .statusCode(201)
+                    .contentType(ContentType.JSON)
+                .extract().jsonPath().getMap("$");
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body).containsOnlyKeys("concertId", "liked", "likeCount");
+            softly.assertThat(body.get("concertId")).isEqualTo((int) NEW_LIKE_CONCERT_ID);
+            softly.assertThat(body.get("liked")).isEqualTo(true);
+            softly.assertThat(body.get("likeCount")).isInstanceOf(Integer.class);
+        });
+    }
+
+    @Test
+    void 이미_좋아요한_상태에서_다시_등록하면_200이고_likeCount가_증가하지_않는다() {
+        int likeCountAfterFirst = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", REPEAT_LIKE_CONCERT_ID)
+                .then()
+                    .statusCode(201)
+                .extract().jsonPath().getInt("likeCount");
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", REPEAT_LIKE_CONCERT_ID)
+                .then()
+                    .statusCode(200)
+                    .body("liked", equalTo(true))
+                    .body("likeCount", equalTo(likeCountAfterFirst));
+    }
+
+    @Test
+    void 좋아요를_취소하면_200과_liked_false를_반환하고_likeCount가_1_감소한다() {
+        int likeCountWhenLiked = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", CANCEL_LIKE_CONCERT_ID)
+                .then()
+                    .statusCode(201)
+                .extract().jsonPath().getInt("likeCount");
+
+        Map<String, Object> body = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .delete("/concerts/{concertId}/likes", CANCEL_LIKE_CONCERT_ID)
+                .then()
+                    .statusCode(200)
+                    .contentType(ContentType.JSON)
+                .extract().jsonPath().getMap("$");
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body).containsOnlyKeys("concertId", "liked", "likeCount");
+            softly.assertThat(body.get("concertId")).isEqualTo((int) CANCEL_LIKE_CONCERT_ID);
+            softly.assertThat(body.get("liked")).isEqualTo(false);
+            softly.assertThat(body.get("likeCount")).isEqualTo(likeCountWhenLiked - 1);
+        });
+    }
+
+    @Test
+    void 좋아요한_적_없는_상태에서_취소해도_200이고_likeCount가_변하지_않는다() {
+        int likeCountBefore = detailOf(IDEMPOTENT_CANCEL_CONCERT_ID).getInt("likeCount");
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .delete("/concerts/{concertId}/likes", IDEMPOTENT_CANCEL_CONCERT_ID)
+                .then()
+                    .statusCode(200)
+                    .body("liked", equalTo(false))
+                    .body("likeCount", equalTo(likeCountBefore));
+    }
+
+    @Test
+    void 좋아요_등록_결과가_상세_조회의_liked와_likeCount에_반영된다() {
+        int likeCountAfterLike = RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", LIKE_DETAIL_CONCERT_ID)
+                .then()
+                    .statusCode(201)
+                .extract().jsonPath().getInt("likeCount");
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .get("/concerts/{concertId}", LIKE_DETAIL_CONCERT_ID)
+                .then()
+                    .statusCode(200)
+                    .body("liked", equalTo(true))
+                    .body("likeCount", equalTo(likeCountAfterLike));
+    }
+
+    @Test
+    void 좋아요하지_않은_콘서트는_인증해도_상세의_liked가_false다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .get("/concerts/{concertId}", IDEMPOTENT_CANCEL_CONCERT_ID)
+                .then()
+                    .statusCode(200)
+                    .body("liked", equalTo(false));
+    }
+
+    @Test
+    void 좋아요_등록은_인증이_필요하다() {
+        RestAssured
+                .given().spec(spec)
+                .when()
+                    .post("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                .then()
+                    .statusCode(401)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("UNAUTHORIZED"));
+    }
+
+    @Test
+    void 좋아요_취소는_인증이_필요하다() {
+        RestAssured
+                .given().spec(spec)
+                .when()
+                    .delete("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                .then()
+                    .statusCode(401)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("UNAUTHORIZED"));
+    }
+
+    @Test
+    void 없는_콘서트에_좋아요하면_404와_NOT_FOUND를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", MISSING_CONCERT_ID)
+                .then()
+                    .statusCode(404)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("NOT_FOUND"))
+                    .body("instance", equalTo("/concerts/" + MISSING_CONCERT_ID + "/likes"));
+    }
+
+    @Test
+    void 없는_콘서트의_좋아요를_취소하면_404와_NOT_FOUND를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .delete("/concerts/{concertId}/likes", MISSING_CONCERT_ID)
+                .then()
+                    .statusCode(404)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("NOT_FOUND"))
+                    .body("instance", equalTo("/concerts/" + MISSING_CONCERT_ID + "/likes"));
     }
 
     private int fixtureConcertCount() {
