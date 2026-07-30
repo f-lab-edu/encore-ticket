@@ -55,6 +55,9 @@ public class ReservationController {
         }
 
         for (long seatId : request.seatIds()) {
+            if (!StubReservations.seatExists(seatId)) {
+                throw notFound("존재하지 않는 좌석입니다: " + seatId);
+            }
             if (!StubReservations.seatBelongsTo(request.scheduleId(), seatId)) {
                 throw badRequest("회차에 속하지 않는 좌석입니다: " + seatId);
             }

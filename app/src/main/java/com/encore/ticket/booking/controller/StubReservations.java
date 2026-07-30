@@ -2,6 +2,8 @@ package com.encore.ticket.booking.controller;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +74,11 @@ final class StubReservations {
     private static final Map<Long, StubReservation> RESERVATIONS = createReservations();
 
     private StubReservations() {
+    }
+
+    static boolean seatExists(long seatId) {
+        long scheduleId = seatId / 10;
+        return StubSchedules.exists(scheduleId) && StubSeatMap.seatOf(scheduleId, seatId).isPresent();
     }
 
     static boolean seatBelongsTo(long scheduleId, long seatId) {
@@ -157,6 +164,7 @@ final class StubReservations {
     private static List<StubReservation> ownReservations() {
         return RESERVATIONS.values().stream()
                 .filter(StubReservation::owned)
+                .sorted(Comparator.comparingLong(StubReservation::id).reversed())
                 .toList();
     }
 
@@ -214,7 +222,7 @@ final class StubReservations {
                 OTHER_MEMBER_RESERVATION_ID, ReservationStatus.CONFIRMED, false, List.of(2016L)));
         reservations.put(ALREADY_CANCELLED_RESERVATION_ID, createReservation(
                 ALREADY_CANCELLED_RESERVATION_ID, ReservationStatus.CANCELLED, true, List.of(2011L)));
-        return Map.copyOf(reservations);
+        return Collections.unmodifiableMap(reservations);
     }
 
     private static StubReservation createReservation(
