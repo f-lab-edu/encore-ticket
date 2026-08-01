@@ -57,7 +57,7 @@ public class DomainExceptionHandler {
             case AMOUNT_MISMATCH -> HttpStatus.BAD_REQUEST;
             case RESERVATION_NOT_OWNED -> HttpStatus.FORBIDDEN;
             case PAYMENT_KEY_REUSED, ORDER_ID_ALREADY_BOUND,
-                 RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
+                 STALE_PAYMENT_ATTEMPT, RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
             case HOLD_EXPIRED -> HttpStatus.GONE;
         };
     }
@@ -66,8 +66,9 @@ public class DomainExceptionHandler {
         return switch (errorCode) {
             case QUEUE_NOT_ADMITTED, HOLD_NOT_OWNED, RESERVATION_NOT_OWNED -> HttpStatus.FORBIDDEN;
             case SEAT_ALREADY_HELD, IDEMPOTENCY_KEY_REUSED,
-                 PURCHASE_LIMIT_EXCEEDED, RESERVATION_CANCELLED -> HttpStatus.CONFLICT;
-            case HOLD_EXPIRED -> HttpStatus.GONE;
+                 PURCHASE_LIMIT_EXCEEDED, RESERVATION_CANCELLED,
+                 CANCELLATION_CLOSED, PAYMENT_IN_PROGRESS -> HttpStatus.CONFLICT;
+            case HOLD_EXPIRED, QUEUE_TOKEN_EXPIRED -> HttpStatus.GONE;
         };
     }
 }
