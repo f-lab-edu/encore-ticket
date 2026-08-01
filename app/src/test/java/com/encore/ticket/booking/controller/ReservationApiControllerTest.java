@@ -662,6 +662,18 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
+    void 예매_내역_조회는_인증이_필요하다() {
+        RestAssured
+                .given().spec(spec)
+                .when()
+                    .get("/reservations/{reservationId}", StubReservations.CONFIRMED_RESERVATION_ID)
+                .then()
+                    .statusCode(401)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("UNAUTHORIZED"));
+    }
+
+    @Test
     void 예매를_취소하면_200과_스펙에_정의된_3개_필드를_반환한다() {
         Map<String, Object> body = cancelRequest(
                 StubReservations.PENDING_RESERVATION_ID, ReservationStatus.CANCELLED.name())
@@ -679,12 +691,36 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 이미_취소된_예매를_다시_취소해도_200을_반환한다() {
-        cancelRequest(StubReservations.ALREADY_CANCELLED_RESERVATION_ID, ReservationStatus.CANCELLED.name())
+    void 이미_취소된_예매를_다시_취소하면_204와_빈_바디를_반환한다() {
+        String body = cancelRequest(
+                StubReservations.ALREADY_CANCELLED_RESERVATION_ID, ReservationStatus.CANCELLED.name())
                 .then()
-                    .statusCode(200)
-                    .contentType(ContentType.JSON)
-                    .body("status", equalTo("CANCELLED"));
+                    .statusCode(204)
+                .extract().asString();
+
+        assertThat(body).isEmpty();
+    }
+
+    @Test
+    void 취소할_수_없는_예매를_취소하면_409와_CANCELLATION_CLOSED를_반환한다() {
+        cancelRequest(
+                StubReservations.CANCELLATION_CLOSED_RESERVATION_ID, ReservationStatus.CANCELLED.name())
+                .then()
+                    .statusCode(409)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(409))
+                    .body("code", equalTo("CANCELLATION_CLOSED"));
+    }
+
+    @Test
+    void 결제_처리_중인_예매를_취소하면_409와_PAYMENT_IN_PROGRESS를_반환한다() {
+        cancelRequest(
+                StubReservations.PAYMENT_IN_PROGRESS_RESERVATION_ID, ReservationStatus.CANCELLED.name())
+                .then()
+                    .statusCode(409)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(409))
+                    .body("code", equalTo("PAYMENT_IN_PROGRESS"));
     }
 
     @ParameterizedTest(name = "status={0}")

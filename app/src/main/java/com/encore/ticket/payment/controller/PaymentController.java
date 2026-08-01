@@ -8,6 +8,7 @@ import com.encore.ticket.payment.api.exception.ExpiredReservationException;
 import com.encore.ticket.payment.api.exception.OrderIdAlreadyBoundException;
 import com.encore.ticket.payment.api.exception.PaymentKeyReusedException;
 import com.encore.ticket.payment.api.exception.ReservationNotOwnedException;
+import com.encore.ticket.payment.api.exception.StalePaymentAttemptException;
 
 import jakarta.validation.Valid;
 
@@ -40,6 +41,9 @@ public class PaymentController {
         }
         if ("EXPIRED".equals(StubPayments.reservationStatusOf(orderId))) {
             throw new ExpiredReservationException();
+        }
+        if (StubPayments.stale(orderId)) {
+            throw new StalePaymentAttemptException();
         }
         if (!StubPayments.paymentKeyOf(orderId).equals(request.paymentKey())) {
             if (StubPayments.paymentKeyBoundToOtherOrder(request.paymentKey(), orderId)) {

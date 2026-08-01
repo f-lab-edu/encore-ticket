@@ -172,6 +172,21 @@ class QueueApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
+    void 만료된_토큰으로_상태를_조회하면_410과_QUEUE_TOKEN_EXPIRED를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, StubQueue.EXPIRED_TOKEN)
+                .when()
+                    .get("/queue/{scheduleId}/status", StubSchedules.OPEN_SCHEDULE_ID)
+                .then()
+                    .statusCode(410)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(410))
+                    .body("code", equalTo("QUEUE_TOKEN_EXPIRED"));
+    }
+
+    @Test
     void 없는_회차의_상태를_조회하면_404를_반환한다() {
         RestAssured
                 .given().spec(spec)

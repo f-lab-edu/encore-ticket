@@ -25,6 +25,8 @@ final class StubPayments {
 
     static final String FAILED_ORDER_ID = "reservation-506-1";
 
+    static final String STALE_ORDER_ID = "reservation-509-1";
+
     static final String MISSING_ORDER_ID = "reservation-999-1";
 
     static final String UNKNOWN_PAYMENT_KEY = "tgen_unknown_key";
@@ -83,6 +85,10 @@ final class StubPayments {
                 .orElse(null);
     }
 
+    static boolean stale(String orderId) {
+        return STALE_ORDER_ID.equals(orderId);
+    }
+
     static PaymentConfirmResponse confirm(String orderId) {
         StubPayment payment = PAYMENTS.get(orderId);
 
@@ -134,6 +140,8 @@ final class StubPayments {
                 createPayment(EXPIRED_ORDER_ID, 505L, PaymentStatus.PENDING, "EXPIRED", true));
         payments.put(FAILED_ORDER_ID,
                 createPayment(FAILED_ORDER_ID, 506L, PaymentStatus.FAILED, "PENDING_PAYMENT", true));
+        payments.put(STALE_ORDER_ID,
+                createPayment(STALE_ORDER_ID, 509L, PaymentStatus.PENDING, "PENDING_PAYMENT", true));
         return Collections.unmodifiableMap(payments);
     }
 

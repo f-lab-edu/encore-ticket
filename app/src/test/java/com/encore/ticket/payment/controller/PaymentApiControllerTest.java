@@ -119,6 +119,24 @@ class PaymentApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
+    void 오래된_결제_시도로_승인하면_409와_STALE_PAYMENT_ATTEMPT를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .body(Map.of(
+                            "paymentKey", StubPayments.paymentKeyOf(StubPayments.STALE_ORDER_ID),
+                            "orderId", StubPayments.STALE_ORDER_ID,
+                            "amount", StubPayments.EXPECTED_AMOUNT))
+                .when()
+                    .post("/payments/confirm")
+                .then()
+                    .statusCode(409)
+                    .contentType(PROBLEM_JSON)
+                    .body("status", equalTo(409))
+                    .body("code", equalTo("STALE_PAYMENT_ATTEMPT"));
+    }
+
+    @Test
     void 실패한_결제를_다시_승인하면_200과_FAILED를_그대로_반환한다() {
         Map<String, Object> confirmed = confirmRequest(
                 StubPayments.FAILED_ORDER_ID, StubPayments.EXPECTED_AMOUNT)

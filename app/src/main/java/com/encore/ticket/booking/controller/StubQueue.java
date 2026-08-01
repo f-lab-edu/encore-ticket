@@ -16,6 +16,8 @@ final class StubQueue {
 
     static final String UNKNOWN_TOKEN = "q_unknown";
 
+    static final String EXPIRED_TOKEN = "q_expired";
+
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
     private static final OffsetDateTime ADMITTED_UNTIL =
@@ -29,13 +31,17 @@ final class StubQueue {
 
     private static final int LAPSES_REMAINING = 2;
 
-    private static final Set<String> TOKENS = Set.of(WAITING_TOKEN, ADMITTED_TOKEN);
+    private static final Set<String> TOKENS = Set.of(WAITING_TOKEN, ADMITTED_TOKEN, EXPIRED_TOKEN);
 
     private StubQueue() {
     }
 
     static boolean exists(String queueToken) {
         return TOKENS.contains(queueToken);
+    }
+
+    static boolean expired(String queueToken) {
+        return EXPIRED_TOKEN.equals(queueToken);
     }
 
     static boolean admitted(String queueToken) {

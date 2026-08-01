@@ -5,9 +5,11 @@ import com.encore.ticket.booking.api.dto.ReservationCreateResponse;
 import com.encore.ticket.booking.api.dto.ReservationDetailResponse;
 import com.encore.ticket.booking.api.dto.ReservationSummaryResponse;
 import com.encore.ticket.booking.api.dto.SeatHoldResponse;
+import com.encore.ticket.booking.api.exception.CancellationClosedException;
 import com.encore.ticket.booking.api.exception.HoldExpiredException;
 import com.encore.ticket.booking.api.exception.HoldNotOwnedException;
 import com.encore.ticket.booking.api.exception.IdempotencyKeyReusedException;
+import com.encore.ticket.booking.api.exception.PaymentInProgressException;
 import com.encore.ticket.booking.api.exception.PurchaseLimitExceededException;
 import com.encore.ticket.booking.api.exception.QueueNotAdmittedException;
 import com.encore.ticket.booking.api.exception.ReservationNotOwnedException;
@@ -121,7 +123,7 @@ public class ReservationController {
     }
 
     @PatchMapping("/{reservationId}")
-    ReservationCancelResponse cancel(
+    ResponseEntity<ReservationCancelResponse> cancel(
             @PathVariable("reservationId") long reservationId,
             @Valid @RequestBody ReservationCancelRequest request) {
 
@@ -131,8 +133,17 @@ public class ReservationController {
         if (!StubReservations.ownedByStubMember(reservationId)) {
             throw new ReservationNotOwnedException();
         }
+        if (StubReservations.alreadyCancelled(reservationId)) {
+            return ResponseEntity.noContent().build();
+        }
+        if (StubReservations.cancellationClosed(reservationId)) {
+            throw new CancellationClosedException();
+        }
+        if (StubReservations.paymentInProgress(reservationId)) {
+            throw new PaymentInProgressException();
+        }
 
-        return StubReservations.cancel(reservationId);
+        return ResponseEntity.ok(StubReservations.cancel(reservationId));
     }
 
     private static ResponseStatusException reservationNotFound(long reservationId) {

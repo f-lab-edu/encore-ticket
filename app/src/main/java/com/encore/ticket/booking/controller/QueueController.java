@@ -2,6 +2,7 @@ package com.encore.ticket.booking.controller;
 
 import com.encore.ticket.booking.api.dto.QueueStatusResponse;
 import com.encore.ticket.booking.api.dto.QueueTokenResponse;
+import com.encore.ticket.booking.api.exception.QueueTokenExpiredException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +41,9 @@ public class QueueController {
         if (!StubQueue.exists(queueToken)) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND, "존재하지 않는 대기열 토큰입니다.");
+        }
+        if (StubQueue.expired(queueToken)) {
+            throw new QueueTokenExpiredException();
         }
 
         return StubQueue.status(queueToken);

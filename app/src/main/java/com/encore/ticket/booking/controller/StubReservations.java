@@ -50,6 +50,10 @@ final class StubReservations {
 
     static final long ALREADY_CANCELLED_RESERVATION_ID = 504L;
 
+    static final long CANCELLATION_CLOSED_RESERVATION_ID = 507L;
+
+    static final long PAYMENT_IN_PROGRESS_RESERVATION_ID = 508L;
+
     static final long MISSING_RESERVATION_ID = 999L;
 
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
@@ -155,6 +159,20 @@ final class StubReservations {
                 .orElse(false);
     }
 
+    static boolean alreadyCancelled(long reservationId) {
+        return Optional.ofNullable(RESERVATIONS.get(reservationId))
+                .map(reservation -> reservation.status() == ReservationStatus.CANCELLED)
+                .orElse(false);
+    }
+
+    static boolean cancellationClosed(long reservationId) {
+        return reservationId == CANCELLATION_CLOSED_RESERVATION_ID;
+    }
+
+    static boolean paymentInProgress(long reservationId) {
+        return reservationId == PAYMENT_IN_PROGRESS_RESERVATION_ID;
+    }
+
     static ReservationCancelResponse cancel(long reservationId) {
         return new ReservationCancelResponse(reservationId, ReservationStatus.CANCELLED, CANCELLED_AT);
     }
@@ -220,6 +238,10 @@ final class StubReservations {
                 OTHER_MEMBER_RESERVATION_ID, ReservationStatus.CONFIRMED, false, List.of(2016L)));
         reservations.put(ALREADY_CANCELLED_RESERVATION_ID, createReservation(
                 ALREADY_CANCELLED_RESERVATION_ID, ReservationStatus.CANCELLED, true, List.of(2011L)));
+        reservations.put(CANCELLATION_CLOSED_RESERVATION_ID, createReservation(
+                CANCELLATION_CLOSED_RESERVATION_ID, ReservationStatus.CONFIRMED, true, List.of(2012L)));
+        reservations.put(PAYMENT_IN_PROGRESS_RESERVATION_ID, createReservation(
+                PAYMENT_IN_PROGRESS_RESERVATION_ID, ReservationStatus.PENDING_PAYMENT, true, List.of(2013L)));
         return Collections.unmodifiableMap(reservations);
     }
 
