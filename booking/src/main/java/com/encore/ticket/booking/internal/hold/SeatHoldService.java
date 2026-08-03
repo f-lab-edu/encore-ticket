@@ -6,15 +6,12 @@ import com.encore.ticket.booking.api.exception.SeatAlreadyHeldException;
 import com.encore.ticket.catalog.api.SeatCatalogReader;
 
 import java.time.Clock;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 class SeatHoldService {
 
-    private static final int HOLD_MINUTES = 7;
     private static final int PURCHASE_LIMIT_PER_SCHEDULE = 4;
 
     private final SeatHoldRepository seatHoldRepository;
@@ -38,18 +35,15 @@ class SeatHoldService {
             throw new SeatAlreadyHeldException();
         }
 
-        OffsetDateTime expiresAt = OffsetDateTime.now(clock).plusMinutes(HOLD_MINUTES);
-
         Map<Long, Long> prices = seatCatalogReader.pricesOf(seatIds);
         long totalAmount = seatIds.stream()
                 .mapToLong(prices::get)
                 .sum();
 
-        SeatHold seatHold = new SeatHold(
-                UUID.randomUUID().toString(), scheduleId, seatIds, memberId, expiresAt);
+        SeatHold seatHold = SeatHold.hold(scheduleId, seatIds, memberId, clock);
         seatHoldRepository.save(seatHold);
 
         return new SeatHoldResponse(
-                seatHold.holdId(), scheduleId, seatIds, totalAmount, expiresAt);
+                seatHold.holdId(), scheduleId, seatIds, totalAmount, seatHold.expiresAt());
     }
 }
