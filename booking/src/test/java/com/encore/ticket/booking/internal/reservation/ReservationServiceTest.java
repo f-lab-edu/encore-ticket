@@ -41,14 +41,12 @@ class ReservationServiceTest {
 
     @Test
     void 예매를_취소하면_CANCELLED_가_되고_취소_시각이_기록된다() {
-        Reservation reservation = new Reservation(
-                RESERVATION_ID,
-                MEMBER_ID,
-                OffsetDateTime.parse("2026-08-04T10:30:00Z"),
-                ReservationStatus.CONFIRMED,
-                null,
-                null
-        );
+        Reservation reservation = Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
+                .status(ReservationStatus.CONFIRMED)
+                .build();
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
@@ -61,14 +59,13 @@ class ReservationServiceTest {
 
     @Test
     void 다른_사용자의_예매를_취소하면_실패한다() {
-        Reservation reservation = new Reservation(
-                RESERVATION_ID,
-                MEMBER_ID,
-                OffsetDateTime.parse("2026-08-04T10:30:00Z"),
-                ReservationStatus.CANCELLED,
-                null,
-                OffsetDateTime.parse("2026-08-04T10:00:00Z")
-        );
+        Reservation reservation = Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
+                .status(ReservationStatus.CANCELLED)
+                .cancelledAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
+                .build();
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, OTHER_MEMBER_ID))
@@ -79,14 +76,13 @@ class ReservationServiceTest {
 
     @Test
     void 이미_취소된_예매를_다시_취소해도_성공한다() {
-        Reservation reservation = new Reservation(
-                RESERVATION_ID,
-                MEMBER_ID,
-                OffsetDateTime.parse("2026-08-04T10:30:00Z"),
-                ReservationStatus.CANCELLED,
-                null,
-                OffsetDateTime.parse("2026-08-04T10:00:00Z")
-        );
+        Reservation reservation = Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
+                .status(ReservationStatus.CANCELLED)
+                .cancelledAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
+                .build();
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
@@ -98,14 +94,12 @@ class ReservationServiceTest {
 
     @Test
     void 공연이_시작된_예매를_취소하면_실패한다() {
-        Reservation reservation = new Reservation(
-                RESERVATION_ID,
-                MEMBER_ID,
-                OffsetDateTime.parse("2026-08-04T10:00:00Z"),
-                ReservationStatus.CONFIRMED,
-                null,
-                null
-        );
+        Reservation reservation = Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
+                .status(ReservationStatus.CONFIRMED)
+                .build();
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
@@ -116,14 +110,13 @@ class ReservationServiceTest {
 
     @Test
     void 결제_진행_중인_예매를_취소하면_실패한다() {
-        Reservation reservation = new Reservation(
-                RESERVATION_ID,
-                MEMBER_ID,
-                OffsetDateTime.parse("2026-08-04T10:30:00Z"),
-                ReservationStatus.PENDING_PAYMENT,
-                OffsetDateTime.parse("2026-08-04T09:00:00Z"),
-                null
-        );
+        Reservation reservation = Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
+                .status(ReservationStatus.PENDING_PAYMENT)
+                .paymentStartsAt(OffsetDateTime.parse("2026-08-04T09:00:00Z"))
+                .build();
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))

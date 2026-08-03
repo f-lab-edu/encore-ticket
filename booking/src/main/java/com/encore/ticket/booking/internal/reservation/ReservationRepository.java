@@ -1,7 +1,11 @@
 package com.encore.ticket.booking.internal.reservation;
 
+import java.util.Optional;
+
 interface ReservationRepository {
     Reservation findById(Long reservationId);
 
-    void save(Reservation reservation);
+    Optional<Reservation> findByHoldId(String holdId);
+
+    Reservation save(Reservation reservation);
 }
