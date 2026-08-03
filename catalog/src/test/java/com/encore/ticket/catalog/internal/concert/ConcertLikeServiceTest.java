@@ -31,7 +31,10 @@ class ConcertLikeServiceTest {
     }
 
     private Concert concertWith(int likeCount) {
-        Concert concert = new Concert(CONCERT_ID, likeCount);
+        Concert concert = Concert.builder()
+                .id(CONCERT_ID)
+                .likeCount(likeCount)
+                .build();
         given(concertRepository.findById(CONCERT_ID)).willReturn(concert);
         return concert;
     }
