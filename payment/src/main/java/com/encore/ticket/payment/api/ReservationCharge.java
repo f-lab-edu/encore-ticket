@@ -7,6 +7,7 @@ public record ReservationCharge(
         Long memberId,
         Long amount,
         String currentOrderId,
+        String holdId,
         boolean cancelled,
         OffsetDateTime expiresAt) {
 }

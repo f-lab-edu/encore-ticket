@@ -2,6 +2,7 @@ package com.encore.ticket.payment.internal;
 
 import com.encore.ticket.payment.api.ReservationCharge;
 import com.encore.ticket.payment.api.dto.PaymentConfirmResponse;
+import com.encore.ticket.payment.api.dto.PaymentResultResponse;
 import com.encore.ticket.payment.api.exception.AmountMismatchException;
 import com.encore.ticket.payment.api.exception.CancelledReservationException;
 import com.encore.ticket.payment.api.exception.ExpiredReservationException;
@@ -15,6 +16,8 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 
 class PaymentService {
+
+    private static final int POLL_AFTER_SECONDS = 2;
 
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
@@ -61,11 +64,34 @@ class PaymentService {
             throw new AmountMismatchException();
         }
 
-        Payment accepted = Payment.accept(paymentKey, orderId, amount, charge.reservationId());
+        Payment accepted = Payment.accept(paymentKey, orderId, amount, charge);
         paymentRepository.save(accepted);
         paymentGateway.requestApproval(paymentKey, orderId, amount);
 
         return toResponse(accepted);
+    }
+
+    PaymentResultResponse result(String orderId, Long memberId, String reservationStatus) {
+        Payment payment = paymentRepository.getByOrderId(orderId);
+        if (!payment.isOwnedBy(memberId)) {
+            throw new ReservationNotOwnedException();
+        }
+
+        if (payment.isPending()) {
+            return new PaymentResultResponse(
+                    payment.paymentKey(), payment.orderId(), payment.status(), POLL_AFTER_SECONDS,
+                    null, null, null, null, null, null, null);
+        }
+        if (payment.isFailed()) {
+            return new PaymentResultResponse(
+                    payment.paymentKey(), payment.orderId(), payment.status(), null,
+                    payment.reservationId(), null, null, null, null,
+                    payment.holdId(), payment.failReason());
+        }
+        return new PaymentResultResponse(
+                payment.paymentKey(), payment.orderId(), payment.status(), null,
+                payment.reservationId(), payment.amount(), payment.method(), reservationStatus,
+                payment.approvedAt(), null, null);
     }
 
     private PaymentConfirmResponse toResponse(Payment payment) {
