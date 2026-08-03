@@ -19,8 +19,9 @@ class QueueToken {
     private QueueStatus status;
     private OffsetDateTime lastPolledAt;
     private int lapsesRemaining;
+    private OffsetDateTime admittedUntil;
 
-    QueueToken(String token, Long scheduleId, Long memberId, int position, QueueStatus status, OffsetDateTime lastPolledAt, int lapsesRemaining) {
+    QueueToken(String token, Long scheduleId, Long memberId, int position, QueueStatus status, OffsetDateTime lastPolledAt, int lapsesRemaining, OffsetDateTime admittedUntil) {
         this.token = token;
         this.scheduleId = scheduleId;
         this.memberId = memberId;
@@ -28,10 +29,11 @@ class QueueToken {
         this.status = status;
         this.lastPolledAt = lastPolledAt;
         this.lapsesRemaining = lapsesRemaining;
+        this.admittedUntil = admittedUntil;
     }
 
     static QueueToken issue(Long scheduleId, Long memberId, int position, Clock clock) {
-        return new QueueToken("q_" + UUID.randomUUID(), scheduleId, memberId, position, QueueStatus.WAITING, OffsetDateTime.now(clock), MAX_LAPSES);
+        return new QueueToken("q_" + UUID.randomUUID(), scheduleId, memberId, position, QueueStatus.WAITING, OffsetDateTime.now(clock), MAX_LAPSES, null);
     }
 
     boolean isWithinGrace(Clock clock) {
@@ -44,6 +46,14 @@ class QueueToken {
 
     boolean hasLapse() {
         return lapsesRemaining > 0;
+    }
+
+    boolean isAdmitted() {
+        return status == QueueStatus.ADMITTED;
+    }
+
+    boolean isAdmissionExpired(Clock clock) {
+        return !OffsetDateTime.now(clock).isBefore(admittedUntil);
     }
 
     void useLapse() {
@@ -68,5 +78,9 @@ class QueueToken {
 
     int lapsesRemaining() {
         return lapsesRemaining;
+    }
+
+    OffsetDateTime admittedUntil() {
+        return admittedUntil;
     }
 }

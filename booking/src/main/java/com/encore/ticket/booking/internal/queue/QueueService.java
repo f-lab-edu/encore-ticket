@@ -1,6 +1,8 @@
 package com.encore.ticket.booking.internal.queue;
 
+import com.encore.ticket.booking.api.dto.QueueStatusResponse;
 import com.encore.ticket.booking.api.dto.QueueTokenResponse;
+import com.encore.ticket.booking.api.exception.QueueTokenExpiredException;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -9,6 +11,7 @@ class QueueService {
 
     private static final int POLL_AFTER_SECONDS = 20;
     private static final int ESTIMATED_WAIT_SECONDS_PER_POSITION = 2;
+    private static final int ADMITTED_POSITION = 0;
 
     private final QueueRepository queueRepository;
     private final Clock clock;
@@ -41,6 +44,34 @@ class QueueService {
         }
 
         return issueNew(scheduleId, memberId);
+    }
+
+    QueueStatusResponse status(Long scheduleId, String queueToken, Long memberId) {
+        QueueToken token = queueRepository.findByToken(scheduleId, queueToken, memberId);
+
+        if (token.isAdmitted()) {
+            if (token.isAdmissionExpired(clock)) {
+                throw new QueueTokenExpiredException();
+            }
+            return new QueueStatusResponse(
+                    token.status(), ADMITTED_POSITION, null, null, token.admittedUntil());
+        }
+
+        if (!token.isWithinGrace(clock)) {
+            if (!token.hasLapse()) {
+                throw new QueueTokenExpiredException();
+            }
+            token.useLapse();
+        }
+        token.recordPoll(clock);
+        queueRepository.save(token);
+
+        return new QueueStatusResponse(
+                token.status(),
+                token.position(),
+                token.position() * ESTIMATED_WAIT_SECONDS_PER_POSITION,
+                POLL_AFTER_SECONDS,
+                null);
     }
 
     private QueueTokenResponse issueNew(Long scheduleId, Long memberId) {
