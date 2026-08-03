@@ -3,4 +3,6 @@ plugins {
 }
 
 dependencies {
-}
+    testImplementation(libs.assertj.core)
+    testImplementation(libs.mockito.junit.jupiter)
+}2
