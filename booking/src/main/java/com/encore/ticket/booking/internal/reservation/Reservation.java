@@ -11,6 +11,7 @@ class Reservation {
     private static final String ORDER_ID_PREFIX = "reservation-";
     private static final String ORDER_ID_SEPARATOR = "-";
     private static final int FIRST_PAYMENT_ATTEMPT = 1;
+    private static final int PAYMENT_WINDOW_MINUTES = 10;
 
     private final Long id;
     private final Long memberId;
@@ -44,16 +45,19 @@ class Reservation {
     }
 
     static Reservation create(HeldSeats hold, Long amount, OffsetDateTime performanceStartsAt, Clock clock) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        OffsetDateTime paymentDeadline = now.plusMinutes(PAYMENT_WINDOW_MINUTES);
+
         return builder()
                 .memberId(hold.memberId())
                 .scheduleId(hold.scheduleId())
                 .seatIds(hold.seatIds())
                 .amount(amount)
                 .status(ReservationStatus.PENDING_PAYMENT)
-                .expiresAt(hold.expiresAt())
-                .originalExpiresAt(hold.expiresAt())
+                .expiresAt(paymentDeadline)
+                .originalExpiresAt(paymentDeadline)
                 .performanceStartsAt(performanceStartsAt)
-                .reservedAt(OffsetDateTime.now(clock))
+                .reservedAt(now)
                 .paymentAttemptNo(FIRST_PAYMENT_ATTEMPT)
                 .build();
     }

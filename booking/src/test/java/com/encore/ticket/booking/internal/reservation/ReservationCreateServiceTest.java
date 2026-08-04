@@ -44,7 +44,8 @@ class ReservationCreateServiceTest {
     private static final long SEAT_PRICE = 165_000L;
     private static final long TOTAL_AMOUNT = 330_000L;
     private static final OffsetDateTime HOLD_EXPIRES_AT = OffsetDateTime.parse("2026-08-04T10:05:00Z");
-    private static final OffsetDateTime EXTENDED_EXPIRES_AT = OffsetDateTime.parse("2026-08-04T10:07:00Z");
+    private static final OffsetDateTime PAYMENT_DEADLINE = OffsetDateTime.parse("2026-08-04T10:10:00Z");
+    private static final OffsetDateTime EXTENDED_EXPIRES_AT = OffsetDateTime.parse("2026-08-04T10:12:00Z");
     private static final OffsetDateTime PERFORMANCE_STARTS_AT = OffsetDateTime.parse("2026-09-01T09:00:00Z");
     private static final String CONCERT_TITLE = "2026 아이유 콘서트";
 
@@ -87,7 +88,7 @@ class ReservationCreateServiceTest {
                 .amount(TOTAL_AMOUNT)
                 .status(status)
                 .expiresAt(expiresAt)
-                .originalExpiresAt(HOLD_EXPIRES_AT)
+                .originalExpiresAt(PAYMENT_DEADLINE)
                 .performanceStartsAt(PERFORMANCE_STARTS_AT)
                 .reservedAt(OffsetDateTime.parse("2026-08-04T09:58:00Z"))
                 .paymentAttemptNo(paymentAttemptNo)
@@ -95,12 +96,12 @@ class ReservationCreateServiceTest {
     }
 
     @Test
-    void 최초_요청이면_선점을_승계한_결제_대기_예매를_만든다() {
+    void 최초_요청이면_결제_창을_새로_열어_결제_대기_예매를_만든다() {
         given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
         given(reservationRepository.save(any()))
-                .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT));
+                .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE));
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
 
@@ -112,8 +113,6 @@ class ReservationCreateServiceTest {
         assertThat(created.amount()).isEqualTo(TOTAL_AMOUNT);
         assertThat(created.scheduleId()).isEqualTo(SCHEDULE_ID);
         assertThat(created.seatIds()).containsExactly(1001L, 1002L);
-        assertThat(created.expiresAt()).isEqualTo(HOLD_EXPIRES_AT);
-        assertThat(created.originalExpiresAt()).isEqualTo(HOLD_EXPIRES_AT);
         assertThat(created.reservedAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
         assertThat(created.paymentAttemptNo()).isEqualTo(1);
 
@@ -122,8 +121,25 @@ class ReservationCreateServiceTest {
         assertThat(result.response().orderId()).isEqualTo("reservation-501-1");
         assertThat(result.response().amount()).isEqualTo(TOTAL_AMOUNT);
         assertThat(result.response().status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
-        assertThat(result.response().expiresAt()).isEqualTo(HOLD_EXPIRES_AT);
-        assertThat(result.response().originalExpiresAt()).isEqualTo(HOLD_EXPIRES_AT);
+    }
+
+    @Test
+    void 결제_창은_선점_만료가_아니라_예매_생성_시점부터_10분이다() {
+        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
+        givenCatalog(vipSeats());
+        given(reservationRepository.save(any()))
+                .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE));
+
+        service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
+
+        ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
+        verify(reservationRepository).save(captor.capture());
+        Reservation created = captor.getValue();
+
+        assertThat(created.expiresAt()).isEqualTo(PAYMENT_DEADLINE);
+        assertThat(created.originalExpiresAt()).isEqualTo(PAYMENT_DEADLINE);
+        assertThat(HOLD_EXPIRES_AT).isBefore(PAYMENT_DEADLINE);
     }
 
     @Test
@@ -186,7 +202,7 @@ class ReservationCreateServiceTest {
         assertThat(result.created()).isFalse();
         assertThat(result.response().orderId()).isEqualTo("reservation-501-1");
         assertThat(result.response().expiresAt()).isEqualTo(EXTENDED_EXPIRES_AT);
-        assertThat(result.response().originalExpiresAt()).isEqualTo(HOLD_EXPIRES_AT);
+        assertThat(result.response().originalExpiresAt()).isEqualTo(PAYMENT_DEADLINE);
 
         verify(reservationRepository, never()).save(any());
     }
