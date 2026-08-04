@@ -3,6 +3,7 @@ package com.encore.ticket.payment.internal;
 import com.encore.ticket.payment.api.ReservationCharge;
 import com.encore.ticket.payment.api.dto.PaymentConfirmResponse;
 import com.encore.ticket.payment.api.dto.PaymentResultResponse;
+import com.encore.ticket.payment.api.dto.PaymentStatus;
 import com.encore.ticket.payment.api.exception.AmountMismatchException;
 import com.encore.ticket.payment.api.exception.CancelledReservationException;
 import com.encore.ticket.payment.api.exception.ExpiredReservationException;
@@ -69,6 +70,10 @@ class PaymentService {
         paymentGateway.requestApproval(paymentKey, orderId, amount);
 
         return toResponse(accepted);
+    }
+
+    Optional<PaymentStatus> latestAttemptOf(String holdId) {
+        return paymentRepository.findLatestByHoldId(holdId).map(Payment::status);
     }
 
     PaymentResultResponse result(String orderId, Long memberId, String reservationStatus) {

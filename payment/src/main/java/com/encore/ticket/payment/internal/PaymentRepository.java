@@ -10,5 +10,7 @@ interface PaymentRepository {
 
     Optional<Payment> findByOrderId(String orderId);
 
+    Optional<Payment> findLatestByHoldId(String holdId);
+
     void save(Payment payment);
 }

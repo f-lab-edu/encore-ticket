@@ -235,6 +235,22 @@ class PaymentServiceTest {
     }
 
     @Test
+    void 선점으로_조회했을_때_결제_시도가_없으면_비어_있다() {
+        given(paymentRepository.findLatestByHoldId(HOLD_ID)).willReturn(Optional.empty());
+
+        assertThat(service.latestAttemptOf(HOLD_ID)).isEmpty();
+    }
+
+    @Test
+    void 선점으로_조회하면_가장_최근_시도의_상태를_돌려준다() {
+        given(paymentRepository.findLatestByHoldId(HOLD_ID)).willReturn(Optional.of(new Payment(
+                PAYMENT_KEY, "reservation-501-2", AMOUNT, RESERVATION_ID, MEMBER_ID, HOLD_ID,
+                PaymentStatus.FAILED, null, null, "카드 한도 초과")));
+
+        assertThat(service.latestAttemptOf(HOLD_ID)).contains(PaymentStatus.FAILED);
+    }
+
+    @Test
     void 다른_사용자의_결제_결과를_조회하면_실패한다() {
         givenStored(PaymentStatus.COMPLETED, "CARD", OffsetDateTime.parse("2026-08-04T09:58:00Z"), null);
 
