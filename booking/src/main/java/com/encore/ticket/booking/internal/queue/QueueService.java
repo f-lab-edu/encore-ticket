@@ -3,6 +3,7 @@ package com.encore.ticket.booking.internal.queue;
 import com.encore.ticket.booking.api.dto.QueueStatusResponse;
 import com.encore.ticket.booking.api.dto.QueueTokenResponse;
 import com.encore.ticket.booking.api.exception.QueueTokenExpiredException;
+import com.encore.ticket.booking.api.exception.QueueTokenNotOwnedException;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -47,7 +48,10 @@ class QueueService {
     }
 
     QueueStatusResponse status(Long scheduleId, String queueToken, Long memberId) {
-        QueueToken token = queueRepository.findByToken(scheduleId, queueToken, memberId);
+        QueueToken token = queueRepository.findByToken(scheduleId, queueToken);
+        if (!token.isOwnedBy(memberId)) {
+            throw new QueueTokenNotOwnedException();
+        }
 
         if (token.isAdmitted()) {
             if (token.isAdmissionExpired(clock)) {

@@ -48,6 +48,10 @@ class QueueToken {
         return lapsesRemaining > 0;
     }
 
+    boolean isOwnedBy(Long memberId) {
+        return this.memberId.equals(memberId);
+    }
+
     boolean isAdmitted() {
         return status == QueueStatus.ADMITTED;
     }
