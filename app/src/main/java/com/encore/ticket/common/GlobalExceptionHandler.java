@@ -1,13 +1,19 @@
 package com.encore.ticket.common;
 
 import java.util.List;
+import java.util.Map;
+
+import com.encore.ticket.auth.api.exception.AuthErrorCode;
+import com.encore.ticket.auth.api.exception.AuthException;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -29,6 +35,46 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, problemDetail, headers, status, request);
     }
 
+    @ExceptionHandler(AuthException.class)
+    protected ResponseEntity<Object> handleAuthException(AuthException ex, WebRequest request) {
+
+        HttpStatus status = statusOf(ex.errorCode());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
+        problemDetail.setProperty("code", ex.errorCode().name());
+
+        return handleExceptionInternal(ex, problemDetail, new HttpHeaders(), status, request);
+    }
+
+    private HttpStatus statusOf(AuthErrorCode errorCode) {
+        return switch (errorCode) {
+            case UNSUPPORTED_PROVIDER -> HttpStatus.BAD_REQUEST;
+            case INVALID_REFRESH_TOKEN -> HttpStatus.UNAUTHORIZED;
+        };
+    }
+
+    @Override
+    protected ResponseEntity<Object> createResponseEntity(
+            Object body,
+            HttpHeaders headers,
+            HttpStatusCode statusCode,
+            WebRequest request) {
+
+        if (body instanceof ProblemDetail problemDetail) {
+            Map<String, Object> properties = problemDetail.getProperties();
+            if (properties == null || !properties.containsKey("code")) {
+                problemDetail.setProperty("code", defaultCode(statusCode));
+            }
+        }
+
+        return super.createResponseEntity(body, headers, statusCode, request);
+    }
+
+    private String defaultCode(HttpStatusCode statusCode) {
+        HttpStatus resolved = HttpStatus.resolve(statusCode.value());
+        return resolved != null ? resolved.name() : "HTTP_" + statusCode.value();
+    }
+
     private List<FieldErrorDetail> toFieldErrorDetails(MethodArgumentNotValidException ex) {
         return ex.getBindingResult().getFieldErrors().stream()
                 .map(this::toFieldErrorDetail)
@@ -45,5 +91,4 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private record FieldErrorDetail(String field, String reason) {
     }
 
-    // TODO: 도메인 예외는 서비스/리포지토리 구현 PR에서 예외 클래스와 함께 @ExceptionHandler 추가 예정
 }
