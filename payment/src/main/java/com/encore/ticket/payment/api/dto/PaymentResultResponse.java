@@ -1,0 +1,17 @@
+package com.encore.ticket.payment.api.dto;
+
+import java.time.OffsetDateTime;
+
+public record PaymentResultResponse(
+        String paymentKey,
+        String orderId,
+        PaymentStatus paymentStatus,
+        Integer pollAfterSeconds,
+        Long reservationId,
+        Long amount,
+        String method,
+        String reservationStatus,
+        OffsetDateTime approvedAt,
+        String holdId,
+        String failReason) {
+}

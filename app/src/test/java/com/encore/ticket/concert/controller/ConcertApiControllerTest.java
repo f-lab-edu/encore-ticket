@@ -7,7 +7,6 @@ import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,6 +31,8 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
 
     private static final long EXISTING_CONCERT_ID = 1L;
     private static final long MISSING_CONCERT_ID = 999L;
+
+    private static final String TYPE_MISMATCH_PROBE = "not-a-number";
     private static final long NOTICE_LESS_CONCERT_ID = 2L;
 
     private static final long LIKE_AUTH_CONCERT_ID = 5L;
@@ -206,7 +207,15 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 상세를_Bearer_헤더와_함께_조회하면_200과_liked_true를_반환한다() {
+    void 좋아요한_콘서트를_Bearer_헤더와_함께_조회하면_200과_liked_true를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when()
+                    .post("/concerts/{concertId}/likes", EXISTING_CONCERT_ID)
+                .then()
+                    .statusCode(201);
+
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
@@ -681,23 +690,33 @@ class ConcertApiControllerTest extends ApiSpecTestSupport {
                     .body("code", notNullValue());
     }
 
-    @Test
-    @Disabled("「공통 에러 응답 규약」은 detail을 한글로 규정하지만, 400 응답의 영문 detail 경로가 둘이다. "
-            + "(1) ?page=-1 ?size=0 ?size=101 ?limit=51 처럼 @Min/@Max 위반은 HandlerMethodValidationException에서 "
-            + "\"Validation failure\"가 나간다. (2) ?size=abc ?limit=abc /concerts/abc 처럼 타입 변환 실패는 "
-            + "handleTypeMismatch에서 \"Failed to convert 'size' with value: 'abc'\"가 나가며, 클라이언트가 보낸 값까지 그대로 되돌려준다. "
-            + "따라서 handleHandlerMethodValidationException 오버라이드만으로는 (2)가 그대로 남아 불충분하고, "
-            + "handleTypeMismatch까지 함께 처리한 뒤 활성화한다.")
-    void 파라미터_검증_실패의_detail은_한글이다() {
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"size=101", "limit=51", "size=abc", "limit=abc"})
+    void 파라미터_검증_실패의_detail은_한글이다(String query) {
+        String path = query.startsWith("limit") ? "/concerts/ranking?" : "/concerts?";
+
         RestAssured
                 .given().spec(spec)
-                    .queryParam("size", 101)
                 .when()
-                    .get("/concerts")
+                    .get(path + query)
                 .then()
                     .statusCode(400)
                     .contentType(PROBLEM_JSON)
                     .body("detail", equalTo("요청 값이 유효하지 않습니다."));
+    }
+
+    @Test
+    void 타입_변환_실패_응답은_클라이언트가_보낸_값을_되돌려주지_않는다() {
+        String detail = RestAssured
+                .given().spec(spec)
+                .when()
+                    .get("/concerts?size=" + TYPE_MISMATCH_PROBE)
+                .then()
+                    .statusCode(400)
+                    .contentType(PROBLEM_JSON)
+                .extract().jsonPath().getString("detail");
+
+        assertThat(detail).doesNotContain(TYPE_MISMATCH_PROBE);
     }
 
     @Test

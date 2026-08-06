@@ -46,10 +46,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/reservations").authenticated()
                         .requestMatchers(HttpMethod.GET, "/reservations").authenticated()
                         .requestMatchers(HttpMethod.GET, "/reservations/{reservationId}").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/reservations/{reservationId}").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/reservations/{reservationId}").authenticated()
 
                         .requestMatchers(HttpMethod.POST, "/payments/confirm").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/payments/{paymentKey}").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/payments/{orderId}").authenticated()
 
                         .anyRequest().authenticated()
                 );

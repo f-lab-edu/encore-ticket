@@ -30,15 +30,11 @@ final class StubConcertCatalog {
 
     private static final long BASE_MIN_PRICE = 77_000L;
 
-    private static final long SEEDED_LIKE_MEMBER_ID = 1L;
-
-    private static final long SEEDED_LIKE_CONCERT_ID = 1L;
-
     private static final Map<Long, StubConcert> CONCERTS = createConcerts();
 
     private static final Map<Long, Integer> LIKE_COUNTS = createLikeCounts();
 
-    private static final Map<Long, Set<Long>> LIKES = createLikes();
+    private static final Map<Long, Set<Long>> LIKES = new ConcurrentHashMap<>();
 
     private StubConcertCatalog() {
     }
@@ -94,7 +90,6 @@ final class StubConcertCatalog {
         LIKE_COUNTS.putAll(createLikeCounts());
 
         LIKES.clear();
-        LIKES.putAll(createLikes());
     }
 
     private static boolean isLiked(long concertId, Long memberId) {
@@ -190,15 +185,6 @@ final class StubConcertCatalog {
         Map<Long, Integer> likeCounts = new ConcurrentHashMap<>();
         CONCERTS.forEach((id, concert) -> likeCounts.put(id, concert.likeCount()));
         return likeCounts;
-    }
-
-    private static Map<Long, Set<Long>> createLikes() {
-        Set<Long> seeded = ConcurrentHashMap.newKeySet();
-        seeded.add(SEEDED_LIKE_CONCERT_ID);
-
-        Map<Long, Set<Long>> likes = new ConcurrentHashMap<>();
-        likes.put(SEEDED_LIKE_MEMBER_ID, seeded);
-        return likes;
     }
 
     private static StubConcert createConcert(long id) {
