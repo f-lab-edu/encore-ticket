@@ -3,6 +3,7 @@ package com.encore.ticket.booking.api.exception;
 public enum BookingErrorCode {
 
     QUEUE_NOT_ADMITTED,
+    QUEUE_TOKEN_NOT_OWNED,
     HOLD_NOT_OWNED,
     RESERVATION_NOT_OWNED,
     SEAT_ALREADY_HELD,
