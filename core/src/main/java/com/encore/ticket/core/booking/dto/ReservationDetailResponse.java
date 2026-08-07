@@ -2,6 +2,7 @@ package com.encore.ticket.core.booking.dto;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import com.encore.ticket.core.catalog.domain.Concert;
 
 public record ReservationDetailResponse(
         long id,
