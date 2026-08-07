@@ -12,6 +12,9 @@ import java.util.Set;
 import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class SeatHoldService {
 
     private static final int PURCHASE_LIMIT_PER_SCHEDULE = 4;
@@ -19,12 +22,6 @@ public class SeatHoldService {
     private final SeatHoldRepository seatHoldRepository;
     private final SeatCatalogReader seatCatalogReader;
     private final Clock clock;
-
-    public SeatHoldService(SeatHoldRepository seatHoldRepository, SeatCatalogReader seatCatalogReader, Clock clock) {
-        this.seatHoldRepository = seatHoldRepository;
-        this.seatCatalogReader = seatCatalogReader;
-        this.clock = clock;
-    }
 
     public SeatHoldResponse hold(long scheduleId, List<Long> seatIds, long memberId) {
         int alreadyHeld = seatHoldRepository.countActiveSeatsOf(scheduleId, memberId);

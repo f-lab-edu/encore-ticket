@@ -19,6 +19,9 @@ import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.port.PaymentGateway;
 import com.encore.ticket.core.payment.port.PaymentRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class PaymentService {
 
     private static final int POLL_AFTER_SECONDS = 2;
@@ -27,15 +30,8 @@ public class PaymentService {
     private final PaymentGateway paymentGateway;
     private final Clock clock;
 
-    public PaymentService(PaymentRepository paymentRepository, PaymentGateway paymentGateway, Clock clock) {
-        this.paymentRepository = paymentRepository;
-        this.paymentGateway = paymentGateway;
-        this.clock = clock;
-    }
-
     public PaymentConfirmResponse confirm(String paymentKey, String orderId, Long amount,
                                    Long memberId, ReservationCharge charge) {
-
         if (!charge.memberId().equals(memberId)) {
             throw new ReservationNotOwnedException();
         }

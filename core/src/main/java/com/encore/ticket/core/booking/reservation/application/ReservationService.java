@@ -9,15 +9,13 @@ import java.time.Clock;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ReservationService {
 
     private final ReservationRepository reservationRepository;
     private final Clock clock;
-
-    public ReservationService(ReservationRepository reservationRepository, Clock clock) {
-        this.reservationRepository = reservationRepository;
-        this.clock = clock;
-    }
 
     public CancelResult cancel(Long reservationId, Long memberId) {
         Reservation reservation = reservationRepository.findById(reservationId);

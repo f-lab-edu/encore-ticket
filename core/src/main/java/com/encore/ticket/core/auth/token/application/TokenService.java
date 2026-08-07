@@ -10,6 +10,9 @@ import com.encore.ticket.core.auth.token.port.AccessTokenIssuer;
 import com.encore.ticket.core.auth.token.port.RefreshTokenGenerator;
 import com.encore.ticket.core.auth.token.port.RefreshTokenRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class TokenService {
 
     private static final String TOKEN_TYPE = "Bearer";
@@ -19,14 +22,6 @@ public class TokenService {
     private final RefreshTokenGenerator refreshTokenGenerator;
     private final AccessTokenIssuer accessTokenIssuer;
     private final Clock clock;
-
-    public TokenService(RefreshTokenRepository refreshTokenRepository, RefreshTokenGenerator refreshTokenGenerator,
-                 AccessTokenIssuer accessTokenIssuer, Clock clock) {
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.refreshTokenGenerator = refreshTokenGenerator;
-        this.accessTokenIssuer = accessTokenIssuer;
-        this.clock = clock;
-    }
 
     public RefreshResult refresh(String rawToken) {
         RefreshToken token = find(rawToken).orElseThrow(InvalidRefreshTokenException::new);

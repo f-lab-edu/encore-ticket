@@ -5,15 +5,13 @@ import com.encore.ticket.core.catalog.domain.Concert;
 import com.encore.ticket.core.catalog.port.ConcertLikeRepository;
 import com.encore.ticket.core.catalog.port.ConcertRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ConcertLikeService {
 
     private final ConcertRepository concertRepository;
     private final ConcertLikeRepository concertLikeRepository;
-
-    public ConcertLikeService(ConcertRepository concertRepository, ConcertLikeRepository concertLikeRepository) {
-        this.concertRepository = concertRepository;
-        this.concertLikeRepository = concertLikeRepository;
-    }
 
     public ConcertLikeResult like(long concertId, long memberId) {
         Concert concert = concertRepository.findById(concertId);

@@ -57,7 +57,14 @@ class TokenServiceTest {
 
     private RefreshToken token(RefreshTokenStatus status, OffsetDateTime idleExpiresAt,
                                OffsetDateTime absoluteExpiresAt) {
-        return new RefreshToken(TOKEN_HASH, FAMILY_ID, USER_ID, status, idleExpiresAt, absoluteExpiresAt);
+        return RefreshToken.builder()
+                .tokenHash(TOKEN_HASH)
+                .tokenFamilyId(FAMILY_ID)
+                .userId(USER_ID)
+                .status(status)
+                .idleExpiresAt(idleExpiresAt)
+                .absoluteExpiresAt(absoluteExpiresAt)
+                .build();
     }
 
     private RefreshToken givenStored(RefreshToken stored) {

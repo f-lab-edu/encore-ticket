@@ -6,6 +6,11 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+@Getter
+@AllArgsConstructor
 public class QueueToken {
 
     private static final int MAX_LAPSES = 2;
@@ -21,19 +26,9 @@ public class QueueToken {
     private int lapsesRemaining;
     private OffsetDateTime admittedUntil;
 
-    public QueueToken(String token, Long scheduleId, Long memberId, int position, QueueStatus status, OffsetDateTime lastPolledAt, int lapsesRemaining, OffsetDateTime admittedUntil) {
-        this.token = token;
-        this.scheduleId = scheduleId;
-        this.memberId = memberId;
-        this.position = position;
-        this.status = status;
-        this.lastPolledAt = lastPolledAt;
-        this.lapsesRemaining = lapsesRemaining;
-        this.admittedUntil = admittedUntil;
-    }
-
     public static QueueToken issue(Long scheduleId, Long memberId, int position, Clock clock) {
-        return new QueueToken("q_" + UUID.randomUUID(), scheduleId, memberId, position, QueueStatus.WAITING, OffsetDateTime.now(clock), MAX_LAPSES, null);
+        return new QueueToken("q_" + UUID.randomUUID(), scheduleId, memberId, position, QueueStatus.WAITING,
+                OffsetDateTime.now(clock), MAX_LAPSES, null);
     }
 
     public boolean isWithinGrace(Clock clock) {
@@ -62,29 +57,5 @@ public class QueueToken {
 
     public void useLapse() {
         lapsesRemaining--;
-    }
-
-    public Long scheduleId() {
-        return scheduleId;
-    }
-
-    public int position() {
-        return position;
-    }
-
-    public String token() {
-        return token;
-    }
-
-    public QueueStatus status() {
-        return status;
-    }
-
-    public int lapsesRemaining() {
-        return lapsesRemaining;
-    }
-
-    public OffsetDateTime admittedUntil() {
-        return admittedUntil;
     }
 }
