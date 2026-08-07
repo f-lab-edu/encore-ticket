@@ -49,7 +49,7 @@ class ReservationServiceTest {
                 .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
                 .status(ReservationStatus.CONFIRMED)
                 .build();
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
         assertThat(result.alreadyCancelled()).isFalse();
@@ -68,7 +68,7 @@ class ReservationServiceTest {
                 .status(ReservationStatus.CANCELLED)
                 .cancelledAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
                 .build();
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, OTHER_MEMBER_ID))
                 .isInstanceOf(ReservationNotOwnedException.class);
@@ -85,7 +85,7 @@ class ReservationServiceTest {
                 .status(ReservationStatus.CANCELLED)
                 .cancelledAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
                 .build();
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
         assertThat(result.alreadyCancelled()).isTrue();
@@ -102,7 +102,7 @@ class ReservationServiceTest {
                 .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
                 .status(ReservationStatus.CONFIRMED)
                 .build();
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
                 .isInstanceOf(CancellationClosedException.class);
@@ -119,7 +119,7 @@ class ReservationServiceTest {
                 .status(ReservationStatus.PENDING_PAYMENT)
                 .paymentStartsAt(OffsetDateTime.parse("2026-08-04T09:00:00Z"))
                 .build();
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
 
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
                 .isInstanceOf(PaymentInProgressException.class);

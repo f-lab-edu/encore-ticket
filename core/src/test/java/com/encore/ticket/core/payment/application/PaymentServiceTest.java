@@ -78,9 +78,7 @@ class PaymentServiceTest {
 
     @Test
     void 같은_요청을_다시_보내면_PG를_다시_부르지_않고_기존_결과를_반환한다() {
-        Payment completed = new Payment(
-                PAYMENT_KEY, ORDER_ID, AMOUNT, RESERVATION_ID, MEMBER_ID, HOLD_ID,
-                PaymentStatus.COMPLETED, "CARD",
+        Payment completed = payment(PaymentStatus.COMPLETED, "CARD",
                 OffsetDateTime.parse("2026-08-04T09:58:00Z"), null);
         given(paymentRepository.findByPaymentKey(PAYMENT_KEY)).willReturn(Optional.of(completed));
 
@@ -98,9 +96,10 @@ class PaymentServiceTest {
 
     @Test
     void 같은_결제키를_다른_주문에_쓰면_실패한다() {
-        Payment other = new Payment(
-                PAYMENT_KEY, "reservation-999-1", AMOUNT, 999L, MEMBER_ID, HOLD_ID,
-                PaymentStatus.PENDING, null, null, null);
+        Payment other = Payment.builder()
+                .paymentKey(PAYMENT_KEY).orderId("reservation-999-1").amount(AMOUNT)
+                .reservationId(999L).memberId(MEMBER_ID).holdId(HOLD_ID)
+                .status(PaymentStatus.PENDING).build();
         given(paymentRepository.findByPaymentKey(PAYMENT_KEY)).willReturn(Optional.of(other));
 
         assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge()))
@@ -111,9 +110,10 @@ class PaymentServiceTest {
 
     @Test
     void 같은_주문이_다른_결제키에_이미_묶였으면_실패한다() {
-        Payment bound = new Payment(
-                "tgen_other", ORDER_ID, AMOUNT, RESERVATION_ID, MEMBER_ID, HOLD_ID,
-                PaymentStatus.PENDING, null, null, null);
+        Payment bound = Payment.builder()
+                .paymentKey("tgen_other").orderId(ORDER_ID).amount(AMOUNT)
+                .reservationId(RESERVATION_ID).memberId(MEMBER_ID).holdId(HOLD_ID)
+                .status(PaymentStatus.PENDING).build();
         given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(bound));
 
         assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge()))
@@ -174,10 +174,16 @@ class PaymentServiceTest {
         verify(paymentRepository, never()).save(any());
     }
 
+    private Payment payment(PaymentStatus status, String method, OffsetDateTime approvedAt, String failReason) {
+        return Payment.builder()
+                .paymentKey(PAYMENT_KEY).orderId(ORDER_ID).amount(AMOUNT)
+                .reservationId(RESERVATION_ID).memberId(MEMBER_ID).holdId(HOLD_ID)
+                .status(status).method(method).approvedAt(approvedAt).failReason(failReason)
+                .build();
+    }
+
     private void givenStored(PaymentStatus status, String method, OffsetDateTime approvedAt, String failReason) {
-        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(new Payment(
-                PAYMENT_KEY, ORDER_ID, AMOUNT, RESERVATION_ID, MEMBER_ID, HOLD_ID,
-                status, method, approvedAt, failReason));
+        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(payment(status, method, approvedAt, failReason));
     }
 
     @Test
@@ -246,9 +252,10 @@ class PaymentServiceTest {
 
     @Test
     void 선점으로_조회하면_가장_최근_시도의_상태를_돌려준다() {
-        given(paymentRepository.findLatestByHoldId(HOLD_ID)).willReturn(Optional.of(new Payment(
-                PAYMENT_KEY, "reservation-501-2", AMOUNT, RESERVATION_ID, MEMBER_ID, HOLD_ID,
-                PaymentStatus.FAILED, null, null, "카드 한도 초과")));
+        given(paymentRepository.findLatestByHoldId(HOLD_ID)).willReturn(Optional.of(Payment.builder()
+                .paymentKey(PAYMENT_KEY).orderId("reservation-501-2").amount(AMOUNT)
+                .reservationId(RESERVATION_ID).memberId(MEMBER_ID).holdId(HOLD_ID)
+                .status(PaymentStatus.FAILED).failReason("카드 한도 초과").build()));
 
         assertThat(service.latestAttemptOf(HOLD_ID)).contains(PaymentStatus.FAILED);
     }

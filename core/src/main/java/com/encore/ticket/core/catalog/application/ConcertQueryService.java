@@ -42,7 +42,7 @@ public class ConcertQueryService {
     }
 
     public ConcertDetailResponse detail(long concertId, Long memberId) {
-        Concert concert = concertRepository.findById(concertId);
+        Concert concert = concertRepository.getById(concertId);
         List<ConcertSchedule> schedules = concertScheduleRepository.schedulesOf(concertId);
         List<ConcertPrice> prices = concertScheduleRepository.pricesOf(concertId);
 

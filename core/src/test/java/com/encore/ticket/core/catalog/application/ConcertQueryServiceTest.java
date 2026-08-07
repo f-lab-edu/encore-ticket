@@ -186,7 +186,7 @@ class ConcertQueryServiceTest {
     }
 
     private void givenDetailOf(Concert concert) {
-        given(concertRepository.findById(CONCERT_ID)).willReturn(concert);
+        given(concertRepository.getById(CONCERT_ID)).willReturn(concert);
         given(concertScheduleRepository.schedulesOf(CONCERT_ID)).willReturn(twoShows());
         given(concertScheduleRepository.pricesOf(CONCERT_ID)).willReturn(List.of(
                 new ConcertPrice("VIP", 165_000L),

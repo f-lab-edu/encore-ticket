@@ -39,7 +39,7 @@ public class ReservationQueryService {
     }
 
     public ReservationDetailResponse detail(Long reservationId, Long memberId, CompletedPayment payment) {
-        Reservation reservation = reservationRepository.findById(reservationId);
+        Reservation reservation = reservationRepository.getById(reservationId);
         if (!reservation.isOwnedBy(memberId)) {
             throw new ReservationNotOwnedException();
         }

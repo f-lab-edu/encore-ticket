@@ -14,7 +14,7 @@ public class ConcertLikeService {
     private final ConcertLikeRepository concertLikeRepository;
 
     public ConcertLikeResult like(long concertId, long memberId) {
-        Concert concert = concertRepository.findById(concertId);
+        Concert concert = concertRepository.getById(concertId);
         if (concertLikeRepository.exists(concertId, memberId)) {
             return new ConcertLikeResult(toResponse(concert, true), false);
         }
@@ -27,7 +27,7 @@ public class ConcertLikeService {
     }
 
     public ConcertLikeResponse unlike(long concertId, long memberId) {
-        Concert concert = concertRepository.findById(concertId);
+        Concert concert = concertRepository.getById(concertId);
         if (!concertLikeRepository.exists(concertId, memberId)) {
             return toResponse(concert, false);
         }

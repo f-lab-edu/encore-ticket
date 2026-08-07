@@ -162,7 +162,7 @@ class ReservationQueryServiceTest {
 
     @Test
     void 내역은_콘서트와_회차와_좌석을_합쳐_돌려준다() {
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L, 1002L), ReservationStatus.CONFIRMED));
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L, 1002L))).willReturn(vipSeats());
@@ -191,7 +191,7 @@ class ReservationQueryServiceTest {
 
     @Test
     void 결제가_완료된_내역은_결제_키와_주문_ID를_담는다() {
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L), ReservationStatus.CONFIRMED));
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
@@ -205,7 +205,7 @@ class ReservationQueryServiceTest {
 
     @Test
     void 결제_전_내역의_결제_키와_주문_ID는_비어_있다() {
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L), ReservationStatus.PENDING_PAYMENT));
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
@@ -219,7 +219,7 @@ class ReservationQueryServiceTest {
 
     @Test
     void 다른_사용자의_예매_내역을_조회하면_실패한다() {
-        given(reservationRepository.findById(RESERVATION_ID)).willReturn(
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L), ReservationStatus.CONFIRMED));
 
         assertThatThrownBy(() -> service.detail(RESERVATION_ID, OTHER_MEMBER_ID, CompletedPayment.NONE))

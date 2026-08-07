@@ -1,17 +1,22 @@
 package com.encore.ticket.core.payment.port;
 
 import java.util.Optional;
+
+import com.encore.ticket.core.exception.NotFoundException;
 import com.encore.ticket.core.payment.domain.Payment;
 
 public interface PaymentRepository {
-    public Payment getByOrderId(String orderId);
 
+    Optional<Payment> findByOrderId(String orderId);
 
-    public Optional<Payment> findByPaymentKey(String paymentKey);
+    default Payment getByOrderId(String orderId) {
+        return findByOrderId(orderId)
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 주문입니다: " + orderId));
+    }
 
-    public Optional<Payment> findByOrderId(String orderId);
+    Optional<Payment> findByPaymentKey(String paymentKey);
 
-    public Optional<Payment> findLatestByHoldId(String holdId);
+    Optional<Payment> findLatestByHoldId(String holdId);
 
-    public void save(Payment payment);
+    void save(Payment payment);
 }
