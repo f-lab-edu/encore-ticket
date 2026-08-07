@@ -19,6 +19,7 @@ public class Reservation {
     private static final int PAYMENT_WINDOW_MINUTES = 10;
 
     private final Long id;
+    private final Long version;
     private final String holdId;
     private final Long memberId;
     private final Long scheduleId;
