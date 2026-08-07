@@ -2,10 +2,10 @@ package com.encore.ticket.common;
 
 import java.util.List;
 
-import com.encore.ticket.booking.api.exception.BookingErrorCode;
-import com.encore.ticket.booking.api.exception.BookingException;
-import com.encore.ticket.payment.api.exception.PaymentErrorCode;
-import com.encore.ticket.payment.api.exception.PaymentException;
+import com.encore.ticket.core.booking.exception.BookingErrorCode;
+import com.encore.ticket.core.booking.exception.BookingException;
+import com.encore.ticket.core.payment.exception.PaymentErrorCode;
+import com.encore.ticket.core.payment.exception.PaymentException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;

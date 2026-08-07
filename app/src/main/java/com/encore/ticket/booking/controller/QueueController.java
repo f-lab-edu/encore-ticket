@@ -1,9 +1,9 @@
 package com.encore.ticket.booking.controller;
 
-import com.encore.ticket.booking.api.dto.QueueStatusResponse;
-import com.encore.ticket.booking.api.dto.QueueTokenResponse;
-import com.encore.ticket.booking.api.exception.QueueTokenExpiredException;
-import com.encore.ticket.booking.api.exception.QueueTokenNotOwnedException;
+import com.encore.ticket.core.booking.dto.QueueStatusResponse;
+import com.encore.ticket.core.booking.dto.QueueTokenResponse;
+import com.encore.ticket.core.booking.exception.QueueTokenExpiredException;
+import com.encore.ticket.core.booking.exception.QueueTokenNotOwnedException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;

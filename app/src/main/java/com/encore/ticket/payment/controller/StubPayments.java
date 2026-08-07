@@ -7,9 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-import com.encore.ticket.payment.api.dto.PaymentConfirmResponse;
-import com.encore.ticket.payment.api.dto.PaymentResultResponse;
-import com.encore.ticket.payment.api.dto.PaymentStatus;
+import com.encore.ticket.core.payment.dto.PaymentConfirmResponse;
+import com.encore.ticket.core.payment.dto.PaymentResultResponse;
+import com.encore.ticket.core.payment.dto.PaymentStatus;
 
 final class StubPayments {
 

@@ -1,7 +1,7 @@
 package com.encore.ticket.booking.controller;
 
-import com.encore.ticket.booking.api.dto.SeatMapResponse;
-import com.encore.ticket.booking.api.exception.QueueNotAdmittedException;
+import com.encore.ticket.core.booking.dto.SeatMapResponse;
+import com.encore.ticket.core.booking.exception.QueueNotAdmittedException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;

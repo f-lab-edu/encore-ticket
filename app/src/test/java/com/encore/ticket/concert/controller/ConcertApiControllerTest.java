@@ -1,7 +1,7 @@
 package com.encore.ticket.concert.controller;
 
 import com.encore.ticket.ApiSpecTestSupport;
-import com.encore.ticket.catalog.api.dto.ConcertStatus;
+import com.encore.ticket.core.catalog.dto.ConcertStatus;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;

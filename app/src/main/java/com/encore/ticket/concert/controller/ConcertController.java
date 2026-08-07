@@ -1,10 +1,10 @@
 package com.encore.ticket.concert.controller;
 
-import com.encore.ticket.catalog.api.dto.ConcertDetailResponse;
-import com.encore.ticket.catalog.api.dto.ConcertLikeResponse;
-import com.encore.ticket.catalog.api.dto.ConcertRankingResponse;
-import com.encore.ticket.catalog.api.dto.ConcertSummaryResponse;
-import com.encore.ticket.catalog.api.dto.PageResponse;
+import com.encore.ticket.core.catalog.dto.ConcertDetailResponse;
+import com.encore.ticket.core.catalog.dto.ConcertLikeResponse;
+import com.encore.ticket.core.catalog.dto.ConcertRankingResponse;
+import com.encore.ticket.core.catalog.dto.ConcertSummaryResponse;
+import com.encore.ticket.core.catalog.dto.PageResponse;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

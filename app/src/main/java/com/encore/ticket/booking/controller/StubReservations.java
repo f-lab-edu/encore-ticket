@@ -10,15 +10,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import com.encore.ticket.booking.api.dto.ReservationCancelResponse;
-import com.encore.ticket.booking.api.dto.ReservationCreateResponse;
-import com.encore.ticket.booking.api.dto.ReservationDetailResponse;
-import com.encore.ticket.booking.api.dto.ReservationStatus;
-import com.encore.ticket.booking.api.dto.ReservationSummaryResponse;
-import com.encore.ticket.booking.api.dto.SeatHoldResponse;
-import com.encore.ticket.booking.api.dto.SeatMapResponse;
-import com.encore.ticket.booking.api.dto.SeatStatus;
-import com.encore.ticket.catalog.api.dto.PageResponse;
+import com.encore.ticket.core.booking.dto.ReservationCancelResponse;
+import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
+import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
+import com.encore.ticket.core.booking.dto.ReservationStatus;
+import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
+import com.encore.ticket.core.booking.dto.SeatHoldResponse;
+import com.encore.ticket.core.booking.dto.SeatMapResponse;
+import com.encore.ticket.core.booking.dto.SeatStatus;
+import com.encore.ticket.core.catalog.dto.PageResponse;
 
 final class StubReservations {
 

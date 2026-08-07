@@ -3,8 +3,8 @@ package com.encore.ticket.booking.controller;
 import java.util.List;
 import java.util.Optional;
 
-import com.encore.ticket.booking.api.dto.SeatMapResponse;
-import com.encore.ticket.booking.api.dto.SeatStatus;
+import com.encore.ticket.core.booking.dto.SeatMapResponse;
+import com.encore.ticket.core.booking.dto.SeatStatus;
 
 final class StubSeatMap {
 

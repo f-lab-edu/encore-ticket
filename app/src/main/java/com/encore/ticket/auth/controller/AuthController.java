@@ -1,10 +1,10 @@
 package com.encore.ticket.auth.controller;
 
-import com.encore.ticket.auth.api.AuthProvider;
-import com.encore.ticket.auth.api.dto.SocialLoginResponse;
-import com.encore.ticket.auth.api.dto.TokenRefreshResponse;
-import com.encore.ticket.auth.api.exception.InvalidRefreshTokenException;
-import com.encore.ticket.auth.api.exception.UnsupportedProviderException;
+import com.encore.ticket.core.auth.AuthProvider;
+import com.encore.ticket.core.auth.dto.SocialLoginResponse;
+import com.encore.ticket.core.auth.dto.TokenRefreshResponse;
+import com.encore.ticket.core.auth.exception.InvalidRefreshTokenException;
+import com.encore.ticket.core.auth.exception.UnsupportedProviderException;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.validation.constraints.NotBlank;
