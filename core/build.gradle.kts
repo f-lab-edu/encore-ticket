@@ -7,4 +7,5 @@ dependencies {
 
     testImplementation(libs.assertj.core)
     testImplementation(libs.mockito.junit.jupiter)
+    testImplementation(libs.archunit.junit5)
 }
