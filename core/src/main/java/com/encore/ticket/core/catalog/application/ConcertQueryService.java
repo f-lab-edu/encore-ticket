@@ -10,9 +10,9 @@ import com.encore.ticket.core.catalog.domain.Concert;
 import com.encore.ticket.core.catalog.domain.ConcertPeriod;
 import com.encore.ticket.core.catalog.domain.ConcertPrice;
 import com.encore.ticket.core.catalog.domain.ConcertSchedule;
+import com.encore.ticket.core.catalog.port.ConcertCatalogReader;
 import com.encore.ticket.core.catalog.port.ConcertLikeRepository;
 import com.encore.ticket.core.catalog.port.ConcertRepository;
-import com.encore.ticket.core.catalog.port.ConcertScheduleRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -20,15 +20,15 @@ import lombok.RequiredArgsConstructor;
 public class ConcertQueryService {
 
     private final ConcertRepository concertRepository;
-    private final ConcertScheduleRepository concertScheduleRepository;
+    private final ConcertCatalogReader concertCatalogReader;
     private final ConcertLikeRepository concertLikeRepository;
 
     public PageResponse<ConcertSummaryResponse> concerts(int page, int size) {
         List<Concert> concerts = concertRepository.findPage(page, size);
         List<Long> concertIds = concerts.stream().map(Concert::id).toList();
 
-        Map<Long, List<ConcertSchedule>> schedules = concertScheduleRepository.schedulesOf(concertIds);
-        Map<Long, Long> minPrices = concertScheduleRepository.minPricesOf(concertIds);
+        Map<Long, List<ConcertSchedule>> schedules = concertCatalogReader.schedulesOf(concertIds);
+        Map<Long, Long> minPrices = concertCatalogReader.minPricesOf(concertIds);
 
         List<ConcertSummaryResponse> content = concerts.stream()
                 .map(concert -> toSummary(
@@ -43,8 +43,8 @@ public class ConcertQueryService {
 
     public ConcertDetailResponse detail(long concertId, Long memberId) {
         Concert concert = concertRepository.getById(concertId);
-        List<ConcertSchedule> schedules = concertScheduleRepository.schedulesOf(concertId);
-        List<ConcertPrice> prices = concertScheduleRepository.pricesOf(concertId);
+        List<ConcertSchedule> schedules = concertCatalogReader.schedulesOf(concertId);
+        List<ConcertPrice> prices = concertCatalogReader.pricesOf(concertId);
 
         boolean liked = memberId != null && concertLikeRepository.exists(concertId, memberId);
 

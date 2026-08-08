@@ -5,7 +5,7 @@ import java.util.Map;
 import com.encore.ticket.core.catalog.domain.ConcertPrice;
 import com.encore.ticket.core.catalog.domain.ConcertSchedule;
 
-public interface ConcertScheduleRepository {
+public interface ConcertCatalogReader {
     Map<Long, List<ConcertSchedule>> schedulesOf(List<Long> concertIds);
 
     public Map<Long, Long> minPricesOf(List<Long> concertIds);
