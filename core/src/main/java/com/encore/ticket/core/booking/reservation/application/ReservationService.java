@@ -9,12 +9,14 @@ import java.time.Clock;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 public class ReservationService {
 
     private final ReservationRepository reservationRepository;
+    private final SeatAssignmentRepository seatAssignmentRepository;
     private final Clock clock;
 
     public CancelResult cancel(Long reservationId, Long memberId) {
@@ -35,6 +37,7 @@ public class ReservationService {
 
         reservation.cancel(clock);
         reservationRepository.save(reservation);
+        seatAssignmentRepository.release(reservationId);
 
         return new CancelResult(new ReservationCancelResponse(reservation.id(), reservation.status(), reservation.cancelledAt()), false);
     }

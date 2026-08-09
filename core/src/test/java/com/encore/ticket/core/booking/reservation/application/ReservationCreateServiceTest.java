@@ -33,6 +33,7 @@ import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationCreateServiceTest {
@@ -54,6 +55,7 @@ class ReservationCreateServiceTest {
     private static final String CONCERT_TITLE = "2026 아이유 콘서트";
 
     @Mock ReservationRepository reservationRepository;
+    @Mock SeatAssignmentRepository seatAssignmentRepository;
     @Mock HoldReader holdReader;
     @Mock SeatCatalogReader seatCatalogReader;
     @Mock ScheduleCatalogReader scheduleCatalogReader;
@@ -63,7 +65,8 @@ class ReservationCreateServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReservationCreateService(
-                reservationRepository, holdReader, seatCatalogReader, scheduleCatalogReader, CLOCK);
+                reservationRepository, seatAssignmentRepository, holdReader,
+                seatCatalogReader, scheduleCatalogReader, CLOCK);
     }
 
     private HeldSeats hold(Long ownerId, OffsetDateTime expiresAt) {
