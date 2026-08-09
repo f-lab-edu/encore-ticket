@@ -12,6 +12,7 @@ public class RefreshToken {
 
     private static final int IDLE_DAYS = 7;
 
+    private final Long id;
     private final String tokenHash;
     private final String tokenFamilyId;
     private final Long memberId;
