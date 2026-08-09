@@ -14,7 +14,7 @@ public class RefreshToken {
 
     private final String tokenHash;
     private final String tokenFamilyId;
-    private final Long userId;
+    private final Long memberId;
     private final OffsetDateTime absoluteExpiresAt;
 
     private RefreshTokenStatus status;
@@ -29,7 +29,7 @@ public class RefreshToken {
         return builder()
                 .tokenHash(tokenHash)
                 .tokenFamilyId(previous.tokenFamilyId)
-                .userId(previous.userId)
+                .memberId(previous.memberId)
                 .status(RefreshTokenStatus.ACTIVE)
                 .idleExpiresAt(idleExpiresAt)
                 .absoluteExpiresAt(previous.absoluteExpiresAt)
