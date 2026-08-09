@@ -17,15 +17,4 @@ public class Concert {
     private final String venue;
 
     private ConcertStatus status;
-    private int likeCount;
-
-    public void addLike() {
-        likeCount++;
-    }
-
-    public void removeLike() {
-        if (likeCount > 0) {
-            likeCount--;
-        }
-    }
 }

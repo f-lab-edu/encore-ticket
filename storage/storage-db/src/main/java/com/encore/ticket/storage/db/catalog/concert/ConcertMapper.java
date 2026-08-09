@@ -15,7 +15,6 @@ final class ConcertMapper {
                 .posterUrl(entity.posterUrl())
                 .venue(entity.venue())
                 .status(entity.status())
-                .likeCount(entity.likeCount())
                 .build();
     }
 
@@ -28,7 +27,6 @@ final class ConcertMapper {
                 .posterUrl(concert.posterUrl())
                 .venue(concert.venue())
                 .status(concert.status())
-                .likeCount(concert.likeCount())
                 .build();
     }
 }

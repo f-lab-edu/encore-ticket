@@ -1,0 +1,11 @@
+CREATE TABLE concert_like (
+    concert_id BIGINT NOT NULL,
+    member_id  BIGINT NOT NULL,
+
+    created_at  TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at  TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+
+    PRIMARY KEY (concert_id, member_id)
+) ENGINE=InnoDB;
+
+ALTER TABLE concert DROP COLUMN like_count;

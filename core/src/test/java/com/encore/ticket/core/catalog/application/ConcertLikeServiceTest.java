@@ -33,19 +33,15 @@ class ConcertLikeServiceTest {
         service = new ConcertLikeService(concertRepository, concertLikeRepository);
     }
 
-    private Concert concertWith(int likeCount) {
-        Concert concert = Concert.builder()
-                .id(CONCERT_ID)
-                .likeCount(likeCount)
-                .build();
-        given(concertRepository.getById(CONCERT_ID)).willReturn(concert);
-        return concert;
+    private void givenConcert() {
+        given(concertRepository.getById(CONCERT_ID)).willReturn(Concert.builder().id(CONCERT_ID).build());
     }
 
     @Test
-    void 처음_좋아요하면_좋아요_수가_1_늘고_신규로_표시된다() {
-        Concert concert = concertWith(127);
+    void 처음_좋아요하면_기록을_저장하고_신규로_표시된다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(false);
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(128);
 
         ConcertLikeResult result = service.like(CONCERT_ID, MEMBER_ID);
 
@@ -53,78 +49,73 @@ class ConcertLikeServiceTest {
         assertThat(result.response().concertId()).isEqualTo(CONCERT_ID);
         assertThat(result.response().liked()).isTrue();
         assertThat(result.response().likeCount()).isEqualTo(128);
-        assertThat(concert.likeCount()).isEqualTo(128);
 
         verify(concertLikeRepository).save(CONCERT_ID, MEMBER_ID);
-        verify(concertRepository).save(concert);
     }
 
     @Test
-    void 이미_좋아요한_상태에서_다시_요청하면_좋아요_수가_늘지_않는다() {
-        Concert concert = concertWith(128);
+    void 이미_좋아요한_상태에서_다시_요청하면_기록을_저장하지_않는다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(true);
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(128);
 
         ConcertLikeResult result = service.like(CONCERT_ID, MEMBER_ID);
 
         assertThat(result.created()).isFalse();
         assertThat(result.response().liked()).isTrue();
         assertThat(result.response().likeCount()).isEqualTo(128);
-        assertThat(concert.likeCount()).isEqualTo(128);
 
         verify(concertLikeRepository, never()).save(anyLong(), anyLong());
-        verify(concertRepository, never()).save(any());
     }
 
     @Test
-    void 좋아요를_취소하면_좋아요_수가_1_줄고_liked는_거짓이다() {
-        Concert concert = concertWith(128);
+    void 좋아요를_취소하면_기록을_지우고_liked는_거짓이다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(true);
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(127);
 
         ConcertLikeResponse response = service.unlike(CONCERT_ID, MEMBER_ID);
 
         assertThat(response.concertId()).isEqualTo(CONCERT_ID);
         assertThat(response.liked()).isFalse();
         assertThat(response.likeCount()).isEqualTo(127);
-        assertThat(concert.likeCount()).isEqualTo(127);
 
         verify(concertLikeRepository).delete(CONCERT_ID, MEMBER_ID);
-        verify(concertRepository).save(concert);
     }
 
     @Test
-    void 좋아요한_적_없는_상태에서_취소해도_좋아요_수가_변하지_않는다() {
-        Concert concert = concertWith(127);
+    void 좋아요한_적_없는_상태에서_취소해도_기록을_지우지_않는다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(false);
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(127);
 
         ConcertLikeResponse response = service.unlike(CONCERT_ID, MEMBER_ID);
 
         assertThat(response.liked()).isFalse();
         assertThat(response.likeCount()).isEqualTo(127);
-        assertThat(concert.likeCount()).isEqualTo(127);
 
         verify(concertLikeRepository, never()).delete(anyLong(), anyLong());
-        verify(concertRepository, never()).save(any());
     }
 
     @Test
-    void 좋아요_수는_0_아래로_내려가지_않는다() {
-        Concert concert = concertWith(0);
+    void 좋아요_수는_저장된_기록_개수를_그대로_돌려준다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(true);
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(0);
 
         ConcertLikeResponse response = service.unlike(CONCERT_ID, MEMBER_ID);
 
         assertThat(response.likeCount()).isZero();
-        assertThat(concert.likeCount()).isZero();
     }
 
     @Test
-    void 좋아요는_기록과_콘서트를_함께_저장한다() {
-        Concert concert = concertWith(0);
+    void 좋아요는_콘서트_행을_쓰지_않는다() {
+        givenConcert();
         given(concertLikeRepository.exists(CONCERT_ID, MEMBER_ID)).willReturn(false);
 
         service.like(CONCERT_ID, MEMBER_ID);
 
         verify(concertLikeRepository).save(CONCERT_ID, MEMBER_ID);
-        verify(concertRepository).save(concert);
+        verify(concertRepository, never()).save(any());
     }
 }
