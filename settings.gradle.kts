@@ -24,6 +24,7 @@ include(
     "app",
     "core",
     "storage:storage-db",
+    "storage:storage-redis",
 )
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
