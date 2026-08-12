@@ -1,6 +1,6 @@
 package com.encore.ticket.booking.controller;
 
-import com.encore.ticket.booking.api.dto.ReservationStatus;
+import com.encore.ticket.core.booking.dto.ReservationStatus;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;

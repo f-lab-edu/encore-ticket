@@ -4,9 +4,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
 
-import com.encore.ticket.booking.api.dto.QueueStatus;
-import com.encore.ticket.booking.api.dto.QueueStatusResponse;
-import com.encore.ticket.booking.api.dto.QueueTokenResponse;
+import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.dto.QueueStatusResponse;
+import com.encore.ticket.core.booking.dto.QueueTokenResponse;
 
 final class StubQueue {
 

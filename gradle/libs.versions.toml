@@ -1,6 +1,7 @@
 [versions]
 spring-boot = "4.1.0"
 rest-assured = "6.0.1"
+archunit = "1.3.0"
 
 [libraries]
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
@@ -12,3 +13,4 @@ jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations
 rest-assured = { module = "io.rest-assured:rest-assured", version.ref = "rest-assured" }
 mockito-junit-jupiter = { module = "org.mockito:mockito-junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }

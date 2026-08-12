@@ -1,14 +1,14 @@
 package com.encore.ticket.payment.controller;
 
-import com.encore.ticket.payment.api.dto.PaymentConfirmResponse;
-import com.encore.ticket.payment.api.dto.PaymentResultResponse;
-import com.encore.ticket.payment.api.exception.AmountMismatchException;
-import com.encore.ticket.payment.api.exception.CancelledReservationException;
-import com.encore.ticket.payment.api.exception.ExpiredReservationException;
-import com.encore.ticket.payment.api.exception.OrderIdAlreadyBoundException;
-import com.encore.ticket.payment.api.exception.PaymentKeyReusedException;
-import com.encore.ticket.payment.api.exception.ReservationNotOwnedException;
-import com.encore.ticket.payment.api.exception.StalePaymentAttemptException;
+import com.encore.ticket.core.payment.dto.PaymentConfirmResponse;
+import com.encore.ticket.core.payment.dto.PaymentResultResponse;
+import com.encore.ticket.core.payment.exception.AmountMismatchException;
+import com.encore.ticket.core.payment.exception.CancelledReservationException;
+import com.encore.ticket.core.payment.exception.ExpiredReservationException;
+import com.encore.ticket.core.payment.exception.OrderIdAlreadyBoundException;
+import com.encore.ticket.core.payment.exception.PaymentKeyReusedException;
+import com.encore.ticket.core.payment.exception.ReservationNotOwnedException;
+import com.encore.ticket.core.payment.exception.StalePaymentAttemptException;
 
 import jakarta.validation.Valid;
 

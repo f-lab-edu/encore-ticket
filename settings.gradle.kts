@@ -22,10 +22,7 @@ rootProject.name = "ticket"
 
 include(
     "app",
-    "auth",
-    "catalog",
-    "booking",
-    "payment",
+    "core",
 )
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")

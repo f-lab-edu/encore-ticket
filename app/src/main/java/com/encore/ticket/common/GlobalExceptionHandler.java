@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-import com.encore.ticket.auth.api.exception.AuthErrorCode;
-import com.encore.ticket.auth.api.exception.AuthException;
+import com.encore.ticket.core.auth.exception.AuthErrorCode;
+import com.encore.ticket.core.auth.exception.AuthException;
 
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;

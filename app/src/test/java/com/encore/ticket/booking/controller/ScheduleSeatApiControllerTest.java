@@ -1,7 +1,7 @@
 package com.encore.ticket.booking.controller;
 
 import com.encore.ticket.ApiSpecTestSupport;
-import com.encore.ticket.booking.api.dto.SeatStatus;
+import com.encore.ticket.core.booking.dto.SeatStatus;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;

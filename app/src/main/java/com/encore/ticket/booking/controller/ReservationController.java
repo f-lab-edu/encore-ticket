@@ -1,21 +1,21 @@
 package com.encore.ticket.booking.controller;
 
-import com.encore.ticket.booking.api.dto.ReservationCancelResponse;
-import com.encore.ticket.booking.api.dto.ReservationCreateResponse;
-import com.encore.ticket.booking.api.dto.ReservationDetailResponse;
-import com.encore.ticket.booking.api.dto.ReservationSummaryResponse;
-import com.encore.ticket.booking.api.dto.SeatHoldResponse;
-import com.encore.ticket.booking.api.exception.CancellationClosedException;
-import com.encore.ticket.booking.api.exception.HoldExpiredException;
-import com.encore.ticket.booking.api.exception.HoldNotOwnedException;
-import com.encore.ticket.booking.api.exception.IdempotencyKeyReusedException;
-import com.encore.ticket.booking.api.exception.PaymentInProgressException;
-import com.encore.ticket.booking.api.exception.PurchaseLimitExceededException;
-import com.encore.ticket.booking.api.exception.QueueNotAdmittedException;
-import com.encore.ticket.booking.api.exception.ReservationNotOwnedException;
-import com.encore.ticket.booking.api.exception.ReservationCancelledException;
-import com.encore.ticket.booking.api.exception.SeatAlreadyHeldException;
-import com.encore.ticket.catalog.api.dto.PageResponse;
+import com.encore.ticket.core.booking.dto.ReservationCancelResponse;
+import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
+import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
+import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
+import com.encore.ticket.core.booking.dto.SeatHoldResponse;
+import com.encore.ticket.core.booking.exception.CancellationClosedException;
+import com.encore.ticket.core.booking.exception.HoldExpiredException;
+import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
+import com.encore.ticket.core.booking.exception.IdempotencyKeyReusedException;
+import com.encore.ticket.core.booking.exception.PaymentInProgressException;
+import com.encore.ticket.core.booking.exception.PurchaseLimitExceededException;
+import com.encore.ticket.core.booking.exception.QueueNotAdmittedException;
+import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
+import com.encore.ticket.core.booking.exception.ReservationCancelledException;
+import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
+import com.encore.ticket.core.catalog.dto.PageResponse;
 import com.encore.ticket.common.InvalidRequestFieldException;
 
 import jakarta.validation.Valid;

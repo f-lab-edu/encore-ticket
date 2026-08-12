@@ -1,7 +1,7 @@
 package com.encore.ticket.payment.controller;
 
 import com.encore.ticket.ApiSpecTestSupport;
-import com.encore.ticket.payment.api.dto.PaymentStatus;
+import com.encore.ticket.core.payment.dto.PaymentStatus;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
