@@ -23,28 +23,22 @@ public class QueueService {
     private final Clock clock;
 
     public QueueTokenResponse enter(Long scheduleId, Long memberId) {
-        Optional<QueueToken> found = queueRepository.findActiveToken(scheduleId, memberId);
+        return queueRepository.findActiveToken(scheduleId, memberId)
+                .flatMap(this::resume)
+                .orElseGet(() -> issueNew(scheduleId, memberId));
+    }
 
-        if (found.isEmpty()) {
-            return issueNew(scheduleId, memberId);
-        }
-
-        QueueToken existing = found.get();
-
-        if (existing.isWithinGrace(clock)) {
-            existing.recordPoll(clock);
-            queueRepository.save(existing);
-            return toResponse(existing, true);
-        }
-
-        if (existing.hasLapse()) {
+    private Optional<QueueTokenResponse> resume(QueueToken existing) {
+        if (!existing.isWithinGrace(clock)) {
+            if (!existing.hasLapse()) {
+                return Optional.empty();
+            }
             existing.useLapse();
-            existing.recordPoll(clock);
-            queueRepository.save(existing);
-            return toResponse(existing, true);
         }
 
-        return issueNew(scheduleId, memberId);
+        existing.recordPoll(clock);
+        queueRepository.save(existing);
+        return Optional.of(toResponse(existing, true));
     }
 
     public QueueStatusResponse status(Long scheduleId, String queueToken, Long memberId) {

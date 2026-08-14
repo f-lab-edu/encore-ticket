@@ -36,15 +36,20 @@ public class PaymentService {
             throw new ReservationNotOwnedException();
         }
 
-        Optional<Payment> byKey = paymentRepository.findByPaymentKey(paymentKey);
-        if (byKey.isPresent()) {
-            Payment existing = byKey.get();
-            if (!existing.sameRequestAs(orderId, amount)) {
-                throw new PaymentKeyReusedException();
-            }
-            return toResponse(existing);
-        }
+        return paymentRepository.findByPaymentKey(paymentKey)
+                .map(existing -> replay(existing, orderId, amount))
+                .orElseGet(() -> accept(paymentKey, orderId, amount, charge));
+    }
 
+    private PaymentConfirmResponse replay(Payment existing, String orderId, Long amount) {
+        if (!existing.sameRequestAs(orderId, amount)) {
+            throw new PaymentKeyReusedException();
+        }
+        return toResponse(existing);
+    }
+
+    private PaymentConfirmResponse accept(String paymentKey, String orderId, Long amount,
+                                          ReservationCharge charge) {
         if (paymentRepository.findByOrderId(orderId)
                 .filter(bound -> bound.boundToOtherKey(paymentKey))
                 .isPresent()) {
