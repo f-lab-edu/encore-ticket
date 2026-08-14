@@ -3,44 +3,40 @@ package com.encore.ticket.core.booking.queue.domain;
 import com.encore.ticket.core.booking.dto.QueueStatus;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.UUID;
 
-import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@AllArgsConstructor
+@Builder
 public class QueueToken {
 
-    private static final int MAX_LAPSES = 2;
-    private static final int GRACE_MINUTES = 5;
+    public static final int MAX_LAPSES = 2;
+    public static final int GRACE_MINUTES = 5;
 
     private final String token;
     private final Long scheduleId;
     private final Long memberId;
     private final int position;
+    private final int sequence;
 
-    private QueueStatus status;
-    private OffsetDateTime lastPolledAt;
-    private int lapsesRemaining;
-    private OffsetDateTime admittedUntil;
+    private final QueueStatus status;
+    private final OffsetDateTime lastPolledAt;
+    private final int lapsesRemaining;
+    private final OffsetDateTime admittedUntil;
 
-    public static QueueToken issue(Long scheduleId, Long memberId, int position, Clock clock) {
-        return new QueueToken("q_" + UUID.randomUUID(), scheduleId, memberId, position, QueueStatus.WAITING,
-                OffsetDateTime.now(clock), MAX_LAPSES, null);
+    /**
+     * 마지막 성공 폴링에서 이만큼 지나면 토큰을 폐기한다.
+     * 유예 5분에 lapse 두 번을 더해 15분이다.
+     */
+    public static Duration hardExpiry() {
+        return grace().multipliedBy(MAX_LAPSES + 1L);
     }
 
-    public boolean isWithinGrace(Clock clock) {
-        return !OffsetDateTime.now(clock).isAfter(lastPolledAt.plusMinutes(GRACE_MINUTES));
-    }
-
-    public void recordPoll(Clock clock) {
-        lastPolledAt = OffsetDateTime.now(clock);
-    }
-
-    public boolean hasLapse() {
-        return lapsesRemaining > 0;
+    public static Duration grace() {
+        return Duration.ofMinutes(GRACE_MINUTES);
     }
 
     public boolean isOwnedBy(Long memberId) {
@@ -53,9 +49,5 @@ public class QueueToken {
 
     public boolean isAdmissionExpired(Clock clock) {
         return !OffsetDateTime.now(clock).isBefore(admittedUntil);
-    }
-
-    public void useLapse() {
-        lapsesRemaining--;
     }
 }
