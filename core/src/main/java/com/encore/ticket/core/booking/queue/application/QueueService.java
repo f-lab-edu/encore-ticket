@@ -4,11 +4,14 @@ import com.encore.ticket.core.booking.dto.QueueStatusResponse;
 import com.encore.ticket.core.booking.dto.QueueTokenResponse;
 import com.encore.ticket.core.booking.exception.QueueTokenExpiredException;
 import com.encore.ticket.core.booking.exception.QueueTokenNotOwnedException;
+import com.encore.ticket.core.booking.queue.domain.QueueToken;
+import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
+import com.encore.ticket.core.booking.queue.port.QueuePollResult;
+import com.encore.ticket.core.booking.queue.port.QueueRepository;
+import com.encore.ticket.core.exception.NotFoundException;
 
 import java.time.Clock;
-import java.util.Optional;
-import com.encore.ticket.core.booking.queue.domain.QueueToken;
-import com.encore.ticket.core.booking.queue.port.QueueRepository;
+import java.time.OffsetDateTime;
 
 import lombok.RequiredArgsConstructor;
 
@@ -23,29 +26,21 @@ public class QueueService {
     private final Clock clock;
 
     public QueueTokenResponse enter(Long scheduleId, Long memberId) {
-        return queueRepository.findActiveToken(scheduleId, memberId)
-                .flatMap(this::resume)
-                .orElseGet(() -> issueNew(scheduleId, memberId));
-    }
-
-    private Optional<QueueTokenResponse> resume(QueueToken existing) {
-        if (!existing.isWithinGrace(clock)) {
-            if (!existing.hasLapse()) {
-                return Optional.empty();
-            }
-            existing.useLapse();
-        }
-
-        existing.recordPoll(clock);
-        queueRepository.save(existing);
-        return Optional.of(toResponse(existing, true));
+        QueueEnterResult result = queueRepository.enterOrResume(
+                scheduleId, memberId, OffsetDateTime.now(clock));
+        return toResponse(result.token(), !result.created());
     }
 
     public QueueStatusResponse status(Long scheduleId, String queueToken, Long memberId) {
-        QueueToken token = queueRepository.getByToken(scheduleId, queueToken);
-        if (!token.isOwnedBy(memberId)) {
-            throw new QueueTokenNotOwnedException();
-        }
+        QueuePollResult result = queueRepository.recordPoll(
+                scheduleId, queueToken, memberId, OffsetDateTime.now(clock));
+
+        QueueToken token = switch (result.outcome()) {
+            case UPDATED -> result.token();
+            case NOT_FOUND -> throw new NotFoundException("존재하지 않는 대기열 토큰입니다.");
+            case NOT_OWNED -> throw new QueueTokenNotOwnedException();
+            case EXPIRED -> throw new QueueTokenExpiredException();
+        };
 
         if (token.isAdmitted()) {
             if (token.isAdmissionExpired(clock)) {
@@ -55,28 +50,12 @@ public class QueueService {
                     token.status(), ADMITTED_POSITION, null, null, token.admittedUntil());
         }
 
-        if (!token.isWithinGrace(clock)) {
-            if (!token.hasLapse()) {
-                throw new QueueTokenExpiredException();
-            }
-            token.useLapse();
-        }
-        token.recordPoll(clock);
-        queueRepository.save(token);
-
         return new QueueStatusResponse(
                 token.status(),
                 token.position(),
                 token.position() * ESTIMATED_WAIT_SECONDS_PER_POSITION,
                 POLL_AFTER_SECONDS,
                 null);
-    }
-
-    private QueueTokenResponse issueNew(Long scheduleId, Long memberId) {
-        int position = queueRepository.countWaiting(scheduleId) + 1;
-        QueueToken token = QueueToken.issue(scheduleId, memberId, position, clock);
-        queueRepository.save(token);
-        return toResponse(token, false);
     }
 
     private QueueTokenResponse toResponse(QueueToken token, boolean resumed) {
