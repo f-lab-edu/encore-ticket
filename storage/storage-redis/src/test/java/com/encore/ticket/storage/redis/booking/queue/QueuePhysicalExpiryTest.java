@@ -7,63 +7,24 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
+import com.encore.ticket.storage.redis.support.RedisContainerSupport;
 
-@Testcontainers
-class QueuePhysicalExpiryTest {
+class QueuePhysicalExpiryTest extends RedisContainerSupport {
 
-    private static final int REDIS_PORT = 6379;
     private static final long SCHEDULE_ID = 1L;
     private static final long MEMBER_ID = 100L;
 
     private static final QueuePolicy SHORT = new QueuePolicy(Duration.ofMillis(100), 2);
 
-    @Container
-    static final GenericContainer<?> REDIS = new GenericContainer<>(
-            DockerImageName.parse("redis:7.4-alpine"))
-            .withExposedPorts(REDIS_PORT);
-
-    static LettuceConnectionFactory connectionFactory;
-    static StringRedisTemplate redisTemplate;
-
     QueueRedisRepository repository;
-
-    @BeforeAll
-    static void connect() {
-        connectionFactory = new LettuceConnectionFactory(new RedisStandaloneConfiguration(
-                REDIS.getHost(), REDIS.getMappedPort(REDIS_PORT)));
-        connectionFactory.afterPropertiesSet();
-        connectionFactory.start();
-
-        redisTemplate = new StringRedisTemplate(connectionFactory);
-        redisTemplate.afterPropertiesSet();
-    }
-
-    @AfterAll
-    static void disconnect() {
-        connectionFactory.destroy();
-    }
 
     @BeforeEach
     void setUp() {
-        try (RedisConnection connection = connectionFactory.getConnection()) {
-            connection.serverCommands().flushDb();
-        }
-
         QueueFunctions functions = new QueueFunctions(redisTemplate);
         functions.load();
         repository = new QueueRedisRepository(

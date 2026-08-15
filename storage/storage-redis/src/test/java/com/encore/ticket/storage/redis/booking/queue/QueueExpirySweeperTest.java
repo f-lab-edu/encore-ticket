@@ -2,75 +2,31 @@ package com.encore.ticket.storage.redis.booking.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Clock;
-import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.util.List;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
+import com.encore.ticket.storage.redis.support.MutableClock;
+import com.encore.ticket.storage.redis.support.RedisContainerSupport;
 
-@Testcontainers
-class QueueExpirySweeperTest {
+class QueueExpirySweeperTest extends RedisContainerSupport {
 
-    private static final int REDIS_PORT = 6379;
     private static final QueuePolicy POLICY = QueuePolicy.DEFAULT;
     private static final long SCHEDULE_ID = 1L;
     private static final OffsetDateTime T0 = OffsetDateTime.parse("2099-01-01T00:00:00Z");
 
     private static final int REQUEST_PURGE_LIMIT = 50;
 
-    @Container
-    static final GenericContainer<?> REDIS = new GenericContainer<>(
-            DockerImageName.parse("redis:7.4-alpine"))
-            .withExposedPorts(REDIS_PORT);
-
-    static LettuceConnectionFactory connectionFactory;
-    static StringRedisTemplate redisTemplate;
-
     MutableClock clock;
     QueueFunctions functions;
     QueueRedisRepository repository;
     QueueExpirySweeper sweeper;
 
-    @BeforeAll
-    static void connect() {
-        RedisStandaloneConfiguration configuration = new RedisStandaloneConfiguration(
-                REDIS.getHost(), REDIS.getMappedPort(REDIS_PORT));
-        connectionFactory = new LettuceConnectionFactory(configuration);
-        connectionFactory.afterPropertiesSet();
-        connectionFactory.start();
-
-        redisTemplate = new StringRedisTemplate(connectionFactory);
-        redisTemplate.afterPropertiesSet();
-    }
-
-    @AfterAll
-    static void disconnect() {
-        connectionFactory.destroy();
-    }
-
     @BeforeEach
     void setUp() {
-        try (RedisConnection connection = connectionFactory.getConnection()) {
-            connection.serverCommands().flushDb();
-        }
-
         clock = new MutableClock(T0.toInstant());
         functions = new QueueFunctions(redisTemplate);
         functions.load();
@@ -167,33 +123,5 @@ class QueueExpirySweeperTest {
     private long waitingSize() {
         Long size = redisTemplate.opsForZSet().zCard("queue:{%d}:waiting".formatted(SCHEDULE_ID));
         return size == null ? 0 : size;
-    }
-
-    private static final class MutableClock extends Clock {
-
-        private Instant instant;
-
-        private MutableClock(Instant instant) {
-            this.instant = instant;
-        }
-
-        private void moveTo(Instant target) {
-            this.instant = target;
-        }
-
-        @Override
-        public ZoneId getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
-
-        @Override
-        public Instant instant() {
-            return instant;
-        }
     }
 }
