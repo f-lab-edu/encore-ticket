@@ -12,17 +12,14 @@ import java.util.Map;
 import java.util.Set;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class SeatMapService {
 
     private final SeatHoldRepository seatHoldRepository;
     private final SeatCatalogReader  seatCatalogReader;
     private final Clock clock;
-
-    public SeatMapService(SeatHoldRepository seatHoldRepository, SeatCatalogReader seatCatalogReader, Clock clock) {
-        this.seatHoldRepository = seatHoldRepository;
-        this.seatCatalogReader = seatCatalogReader;
-        this.clock = clock;
-    }
 
     public SeatMapResponse seatMap(Long scheduleId) {
         List<SeatInfo> seats = seatCatalogReader.seatsOf(scheduleId);

@@ -14,20 +14,16 @@ import java.util.List;
 import java.util.Map;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
-import com.encore.ticket.core.catalog.domain.Concert;
 
+
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ReservationQueryService {
 
     private final ReservationRepository reservationRepository;
     private final SeatCatalogReader seatCatalogReader;
     private final ScheduleCatalogReader scheduleCatalogReader;
-
-    public ReservationQueryService(ReservationRepository reservationRepository, SeatCatalogReader seatCatalogReader,
-                            ScheduleCatalogReader scheduleCatalogReader) {
-        this.reservationRepository = reservationRepository;
-        this.seatCatalogReader = seatCatalogReader;
-        this.scheduleCatalogReader = scheduleCatalogReader;
-    }
 
     public PageResponse<ReservationSummaryResponse> reservationsOf(Long memberId, int page, int size) {
         List<Reservation> reservations = reservationRepository.findPageByMemberId(memberId, page, size);

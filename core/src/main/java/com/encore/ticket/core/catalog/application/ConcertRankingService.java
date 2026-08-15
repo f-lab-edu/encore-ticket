@@ -10,15 +10,14 @@ import java.util.stream.IntStream;
 import com.encore.ticket.core.catalog.domain.ConcertScore;
 import com.encore.ticket.core.catalog.port.ConcertRankingRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ConcertRankingService {
 
     private static final int FIRST_RANK = 1;
 
     private final ConcertRankingRepository concertRankingRepository;
-
-    public ConcertRankingService(ConcertRankingRepository concertRankingRepository) {
-        this.concertRankingRepository = concertRankingRepository;
-    }
 
     public ConcertRankingResponse ranking(int limit) {
         Optional<OffsetDateTime> snapshotAt = concertRankingRepository.latestSnapshotAt();

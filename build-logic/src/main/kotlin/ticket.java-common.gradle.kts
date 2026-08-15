@@ -27,7 +27,16 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    compileOnly(platform(SpringBootPlugin.BOM_COORDINATES))
+    annotationProcessor(platform(SpringBootPlugin.BOM_COORDINATES))
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+
     testImplementation(platform(SpringBootPlugin.BOM_COORDINATES))
+    testCompileOnly(platform(SpringBootPlugin.BOM_COORDINATES))
+    testAnnotationProcessor(platform(SpringBootPlugin.BOM_COORDINATES))
+    testCompileOnly("org.projectlombok:lombok")
+    testAnnotationProcessor("org.projectlombok:lombok")
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

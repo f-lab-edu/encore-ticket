@@ -10,6 +10,9 @@ import java.util.Optional;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
 import com.encore.ticket.core.booking.queue.port.QueueRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class QueueService {
 
     private static final int POLL_AFTER_SECONDS = 20;
@@ -18,11 +21,6 @@ public class QueueService {
 
     private final QueueRepository queueRepository;
     private final Clock clock;
-
-    public QueueService(QueueRepository queueRepository, Clock clock) {
-        this.queueRepository = queueRepository;
-        this.clock = clock;
-    }
 
     public QueueTokenResponse enter(Long scheduleId, Long memberId) {
         Optional<QueueToken> found = queueRepository.findActiveToken(scheduleId, memberId);

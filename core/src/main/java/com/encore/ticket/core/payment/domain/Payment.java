@@ -1,10 +1,14 @@
 package com.encore.ticket.core.payment.domain;
 
-import com.encore.ticket.core.payment.domain.ReservationCharge;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
 
 import java.time.OffsetDateTime;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+@Getter
+@AllArgsConstructor
 public class Payment {
 
     private final String paymentKey;
@@ -18,20 +22,6 @@ public class Payment {
     private String method;
     private OffsetDateTime approvedAt;
     private String failReason;
-
-    public Payment(String paymentKey, String orderId, Long amount, Long reservationId, Long memberId, String holdId,
-            PaymentStatus status, String method, OffsetDateTime approvedAt, String failReason) {
-        this.paymentKey = paymentKey;
-        this.orderId = orderId;
-        this.amount = amount;
-        this.reservationId = reservationId;
-        this.memberId = memberId;
-        this.holdId = holdId;
-        this.status = status;
-        this.method = method;
-        this.approvedAt = approvedAt;
-        this.failReason = failReason;
-    }
 
     public static Payment accept(String paymentKey, String orderId, Long amount, ReservationCharge charge) {
         return new Payment(paymentKey, orderId, amount, charge.reservationId(), charge.memberId(), charge.holdId(),
@@ -56,41 +46,5 @@ public class Payment {
 
     public boolean boundToOtherKey(String paymentKey) {
         return !this.paymentKey.equals(paymentKey);
-    }
-
-    public String paymentKey() {
-        return paymentKey;
-    }
-
-    public String orderId() {
-        return orderId;
-    }
-
-    public Long amount() {
-        return amount;
-    }
-
-    public Long reservationId() {
-        return reservationId;
-    }
-
-    public PaymentStatus status() {
-        return status;
-    }
-
-    public String method() {
-        return method;
-    }
-
-    public OffsetDateTime approvedAt() {
-        return approvedAt;
-    }
-
-    public String holdId() {
-        return holdId;
-    }
-
-    public String failReason() {
-        return failReason;
     }
 }

@@ -18,6 +18,9 @@ import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ReservationCreateService {
 
     private final ReservationRepository reservationRepository;
@@ -25,16 +28,6 @@ public class ReservationCreateService {
     private final SeatCatalogReader seatCatalogReader;
     private final ScheduleCatalogReader scheduleCatalogReader;
     private final Clock clock;
-
-    public ReservationCreateService(ReservationRepository reservationRepository, HoldReader holdReader,
-                             SeatCatalogReader seatCatalogReader, ScheduleCatalogReader scheduleCatalogReader,
-                             Clock clock) {
-        this.reservationRepository = reservationRepository;
-        this.holdReader = holdReader;
-        this.seatCatalogReader = seatCatalogReader;
-        this.scheduleCatalogReader = scheduleCatalogReader;
-        this.clock = clock;
-    }
 
     public CreateResult create(String holdId, Long memberId, PaymentAttemptState lastAttempt) {
         HeldSeats hold = holdReader.findByHoldId(holdId);

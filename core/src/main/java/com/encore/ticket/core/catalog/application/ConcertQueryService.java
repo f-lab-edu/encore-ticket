@@ -14,18 +14,14 @@ import com.encore.ticket.core.catalog.port.ConcertLikeRepository;
 import com.encore.ticket.core.catalog.port.ConcertRepository;
 import com.encore.ticket.core.catalog.port.ConcertScheduleRepository;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public class ConcertQueryService {
 
     private final ConcertRepository concertRepository;
     private final ConcertScheduleRepository concertScheduleRepository;
     private final ConcertLikeRepository concertLikeRepository;
-
-    public ConcertQueryService(ConcertRepository concertRepository, ConcertScheduleRepository concertScheduleRepository,
-                        ConcertLikeRepository concertLikeRepository) {
-        this.concertRepository = concertRepository;
-        this.concertScheduleRepository = concertScheduleRepository;
-        this.concertLikeRepository = concertLikeRepository;
-    }
 
     public PageResponse<ConcertSummaryResponse> concerts(int page, int size) {
         List<Concert> concerts = concertRepository.findPage(page, size);
