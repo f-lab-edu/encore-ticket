@@ -20,8 +20,6 @@ public class ConcertLikeService {
         }
 
         concertLikeRepository.save(concertId, memberId);
-        concert.addLike();
-        concertRepository.save(concert);
 
         return new ConcertLikeResult(toResponse(concert, true), true);
     }
@@ -33,13 +31,11 @@ public class ConcertLikeService {
         }
 
         concertLikeRepository.delete(concertId, memberId);
-        concert.removeLike();
-        concertRepository.save(concert);
 
         return toResponse(concert, false);
     }
 
     private ConcertLikeResponse toResponse(Concert concert, boolean liked) {
-        return new ConcertLikeResponse(concert.id(), liked, concert.likeCount());
+        return new ConcertLikeResponse(concert.id(), liked, concertLikeRepository.count(concert.id()));
     }
 }

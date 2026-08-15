@@ -24,6 +24,5 @@ public class ConcertEntity {
 
     @Enumerated(EnumType.STRING)
     private ConcertStatus status;
-    private int likeCount;
 
 }

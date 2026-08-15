@@ -61,7 +61,6 @@ class ConcertQueryServiceTest {
                 .posterUrl("https://example.com/poster.jpg")
                 .venue("KSPO DOME")
                 .status(ConcertStatus.ON_SALE)
-                .likeCount(128)
                 .build();
     }
 
@@ -197,6 +196,7 @@ class ConcertQueryServiceTest {
     @Test
     void 상세는_콘서트와_회차와_가격을_합쳐_돌려준다() {
         givenDetailOf(concert(CONCERT_ID, "2026 아이유 콘서트"));
+        given(concertLikeRepository.count(CONCERT_ID)).willReturn(128);
 
         ConcertDetailResponse response = service.detail(CONCERT_ID, null);
 
@@ -270,7 +270,6 @@ class ConcertQueryServiceTest {
                 .posterUrl("https://example.com/poster.jpg")
                 .venue("KSPO DOME")
                 .status(ConcertStatus.ON_SALE)
-                .likeCount(128)
                 .build());
 
         ConcertDetailResponse response = service.detail(CONCERT_ID, null);

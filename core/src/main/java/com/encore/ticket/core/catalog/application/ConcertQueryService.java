@@ -55,7 +55,7 @@ public class ConcertQueryService {
                 concert.notice(),
                 concert.posterUrl(),
                 concert.venue(),
-                concert.likeCount(),
+                concertLikeRepository.count(concertId),
                 liked,
                 schedules.stream().map(this::toDetailSchedule).toList(),
                 prices.stream().map(this::toDetailPrice).toList());
