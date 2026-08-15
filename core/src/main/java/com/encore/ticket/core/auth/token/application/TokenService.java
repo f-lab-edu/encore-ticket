@@ -42,7 +42,7 @@ public class TokenService {
                 RefreshToken.rotatedFrom(token, refreshTokenGenerator.hash(newRawToken), clock));
 
         TokenRefreshResponse response = new TokenRefreshResponse(
-                accessTokenIssuer.issue(token.userId()), TOKEN_TYPE, ACCESS_TOKEN_SECONDS);
+                accessTokenIssuer.issue(token.memberId()), TOKEN_TYPE, ACCESS_TOKEN_SECONDS);
 
         return new RefreshResult(response, newRawToken);
     }

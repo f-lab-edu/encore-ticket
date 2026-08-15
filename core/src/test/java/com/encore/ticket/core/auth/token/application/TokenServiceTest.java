@@ -39,7 +39,7 @@ class TokenServiceTest {
     private static final String NEW_RAW_TOKEN = "rft_next";
     private static final String NEW_TOKEN_HASH = "hash_next";
     private static final String FAMILY_ID = "family_1";
-    private static final long USER_ID = 1L;
+    private static final long MEMBER_ID = 1L;
 
     private static final OffsetDateTime IDLE_EXPIRES_AT = OffsetDateTime.parse("2026-08-11T10:00:00Z");
     private static final OffsetDateTime ABSOLUTE_EXPIRES_AT = OffsetDateTime.parse("2026-08-24T10:00:00Z");
@@ -60,7 +60,7 @@ class TokenServiceTest {
         return RefreshToken.builder()
                 .tokenHash(TOKEN_HASH)
                 .tokenFamilyId(FAMILY_ID)
-                .userId(USER_ID)
+                .memberId(MEMBER_ID)
                 .status(status)
                 .idleExpiresAt(idleExpiresAt)
                 .absoluteExpiresAt(absoluteExpiresAt)
@@ -88,7 +88,7 @@ class TokenServiceTest {
     void 재발급하면_새_액세스_토큰과_새_리프레시_토큰을_돌려준다() {
         givenStored(token(RefreshTokenStatus.ACTIVE, IDLE_EXPIRES_AT, ABSOLUTE_EXPIRES_AT));
         givenNewTokenIssued();
-        given(accessTokenIssuer.issue(USER_ID)).willReturn("new-access-token");
+        given(accessTokenIssuer.issue(MEMBER_ID)).willReturn("new-access-token");
 
         RefreshResult result = service.refresh(RAW_TOKEN);
 
@@ -112,7 +112,7 @@ class TokenServiceTest {
         RefreshToken issued = saved.get(1);
         assertThat(issued.tokenHash()).isEqualTo(NEW_TOKEN_HASH);
         assertThat(issued.tokenFamilyId()).isEqualTo(FAMILY_ID);
-        assertThat(issued.userId()).isEqualTo(USER_ID);
+        assertThat(issued.memberId()).isEqualTo(MEMBER_ID);
         assertThat(issued.status()).isEqualTo(RefreshTokenStatus.ACTIVE);
     }
 
