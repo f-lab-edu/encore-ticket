@@ -4,6 +4,7 @@ import com.encore.ticket.core.catalog.dto.ConcertDetailResponse;
 import com.encore.ticket.core.catalog.dto.ConcertStatus;
 import com.encore.ticket.core.catalog.dto.ConcertSummaryResponse;
 import com.encore.ticket.core.catalog.dto.PageResponse;
+import com.encore.ticket.core.catalog.port.ConcertCatalogReader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +27,6 @@ import com.encore.ticket.core.catalog.domain.ConcertPrice;
 import com.encore.ticket.core.catalog.domain.ConcertSchedule;
 import com.encore.ticket.core.catalog.port.ConcertLikeRepository;
 import com.encore.ticket.core.catalog.port.ConcertRepository;
-import com.encore.ticket.core.catalog.port.ConcertScheduleRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ConcertQueryServiceTest {
@@ -41,14 +41,15 @@ class ConcertQueryServiceTest {
     private static final OffsetDateTime LAST_SHOW_OPENS_AT = OffsetDateTime.parse("2026-07-25T11:00:00Z");
 
     @Mock ConcertRepository concertRepository;
-    @Mock ConcertScheduleRepository concertScheduleRepository;
+    @Mock
+    ConcertCatalogReader concertCatalogReader;
     @Mock ConcertLikeRepository concertLikeRepository;
 
     ConcertQueryService service;
 
     @BeforeEach
     void setUp() {
-        service = new ConcertQueryService(concertRepository, concertScheduleRepository, concertLikeRepository);
+        service = new ConcertQueryService(concertRepository, concertCatalogReader, concertLikeRepository);
     }
 
     private Concert concert(long id, String title) {
@@ -79,9 +80,9 @@ class ConcertQueryServiceTest {
     @Test
     void 목록은_콘서트와_회차와_가격을_합쳐_카드로_돌려준다() {
         given(concertRepository.findPage(0, 12)).willReturn(List.of(concert(CONCERT_ID, "2026 아이유 콘서트")));
-        given(concertScheduleRepository.schedulesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.schedulesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, twoShows()));
-        given(concertScheduleRepository.minPricesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.minPricesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, 121_000L));
         given(concertRepository.count()).willReturn(1L);
 
@@ -104,9 +105,9 @@ class ConcertQueryServiceTest {
     @Test
     void 공연_기간은_가장_이른_회차와_가장_늦은_회차의_날짜다() {
         given(concertRepository.findPage(0, 12)).willReturn(List.of(concert(CONCERT_ID, "2026 아이유 콘서트")));
-        given(concertScheduleRepository.schedulesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.schedulesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, twoShows()));
-        given(concertScheduleRepository.minPricesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.minPricesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, 121_000L));
         given(concertRepository.count()).willReturn(1L);
 
@@ -119,9 +120,9 @@ class ConcertQueryServiceTest {
     @Test
     void 예매_오픈_시각은_가장_이른_회차의_것이지_가장_이른_오픈_시각이_아니다() {
         given(concertRepository.findPage(0, 12)).willReturn(List.of(concert(CONCERT_ID, "2026 아이유 콘서트")));
-        given(concertScheduleRepository.schedulesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.schedulesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, twoShows()));
-        given(concertScheduleRepository.minPricesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.minPricesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, 121_000L));
         given(concertRepository.count()).willReturn(1L);
 
@@ -136,10 +137,10 @@ class ConcertQueryServiceTest {
         given(concertRepository.findPage(0, 12)).willReturn(List.of(
                 concert(CONCERT_ID, "2026 아이유 콘서트"),
                 concert(OTHER_CONCERT_ID, "2026 악뮤 콘서트")));
-        given(concertScheduleRepository.schedulesOf(List.of(CONCERT_ID, OTHER_CONCERT_ID))).willReturn(Map.of(
+        given(concertCatalogReader.schedulesOf(List.of(CONCERT_ID, OTHER_CONCERT_ID))).willReturn(Map.of(
                 CONCERT_ID, twoShows(),
                 OTHER_CONCERT_ID, List.of(show(201L, LAST_SHOW, LAST_SHOW_OPENS_AT, ConcertStatus.ON_SALE))));
-        given(concertScheduleRepository.minPricesOf(List.of(CONCERT_ID, OTHER_CONCERT_ID))).willReturn(Map.of(
+        given(concertCatalogReader.minPricesOf(List.of(CONCERT_ID, OTHER_CONCERT_ID))).willReturn(Map.of(
                 CONCERT_ID, 121_000L,
                 OTHER_CONCERT_ID, 99_000L));
         given(concertRepository.count()).willReturn(2L);
@@ -157,9 +158,9 @@ class ConcertQueryServiceTest {
     @Test
     void 전체_페이지_수는_마지막_페이지를_올려서_센다() {
         given(concertRepository.findPage(1, 4)).willReturn(List.of(concert(CONCERT_ID, "2026 아이유 콘서트")));
-        given(concertScheduleRepository.schedulesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.schedulesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, twoShows()));
-        given(concertScheduleRepository.minPricesOf(List.of(CONCERT_ID)))
+        given(concertCatalogReader.minPricesOf(List.of(CONCERT_ID)))
                 .willReturn(Map.of(CONCERT_ID, 121_000L));
         given(concertRepository.count()).willReturn(10L);
 
@@ -174,8 +175,8 @@ class ConcertQueryServiceTest {
     @Test
     void 콘서트가_없으면_빈_목록과_0페이지를_돌려준다() {
         given(concertRepository.findPage(0, 12)).willReturn(List.of());
-        given(concertScheduleRepository.schedulesOf(List.of())).willReturn(Map.of());
-        given(concertScheduleRepository.minPricesOf(List.of())).willReturn(Map.of());
+        given(concertCatalogReader.schedulesOf(List.of())).willReturn(Map.of());
+        given(concertCatalogReader.minPricesOf(List.of())).willReturn(Map.of());
         given(concertRepository.count()).willReturn(0L);
 
         PageResponse<ConcertSummaryResponse> response = service.concerts(0, 12);
@@ -187,8 +188,8 @@ class ConcertQueryServiceTest {
 
     private void givenDetailOf(Concert concert) {
         given(concertRepository.getById(CONCERT_ID)).willReturn(concert);
-        given(concertScheduleRepository.schedulesOf(CONCERT_ID)).willReturn(twoShows());
-        given(concertScheduleRepository.pricesOf(CONCERT_ID)).willReturn(List.of(
+        given(concertCatalogReader.schedulesOf(CONCERT_ID)).willReturn(twoShows());
+        given(concertCatalogReader.pricesOf(CONCERT_ID)).willReturn(List.of(
                 new ConcertPrice("VIP", 165_000L),
                 new ConcertPrice("R", 143_000L)));
     }
