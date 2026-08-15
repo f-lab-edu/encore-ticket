@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
@@ -35,11 +36,15 @@ class ReservationServiceTest {
     @Mock
     ReservationRepository reservationRepository;
 
+    @Mock
+    SeatAssignmentRepository seatAssignmentRepository;
+
     ReservationService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReservationService(reservationRepository, CLOCK); }
+        service = new ReservationService(reservationRepository, seatAssignmentRepository, CLOCK);
+    }
 
     @Test
     void 예매를_취소하면_CANCELLED_가_되고_취소_시각이_기록된다() {

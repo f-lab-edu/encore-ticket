@@ -5,6 +5,7 @@ import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
 import com.encore.ticket.core.booking.exception.HoldExpiredException;
 import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
 import com.encore.ticket.core.booking.exception.ReservationCancelledException;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 import com.encore.ticket.core.catalog.port.ScheduleCatalogReader;
 import com.encore.ticket.core.catalog.domain.ScheduleInfo;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
@@ -24,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 public class ReservationCreateService {
 
     private final ReservationRepository reservationRepository;
+    private final SeatAssignmentRepository seatAssignmentRepository;
     private final HoldReader holdReader;
     private final SeatCatalogReader seatCatalogReader;
     private final ScheduleCatalogReader scheduleCatalogReader;
@@ -67,6 +69,8 @@ public class ReservationCreateService {
 
         Reservation saved = reservationRepository.save(
                 Reservation.create(hold, amount, schedule.startsAt(), clock));
+
+        seatAssignmentRepository.assign(hold.seatIds(), saved.id(), hold.scheduleId());
 
         return toResponse(saved, schedule, seats);
     }

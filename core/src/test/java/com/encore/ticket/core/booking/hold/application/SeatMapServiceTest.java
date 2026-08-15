@@ -23,6 +23,7 @@ import static org.assertj.core.groups.Tuple.*;
 import static org.mockito.BDDMockito.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 
 
 @ExtendWith(MockitoExtension.class)
@@ -35,13 +36,16 @@ class SeatMapServiceTest {
     SeatHoldRepository seatHoldRepository;
 
     @Mock
+    SeatAssignmentRepository seatAssignmentRepository;
+
+    @Mock
     SeatCatalogReader seatCatalogReader;
 
     SeatMapService service;
 
     @BeforeEach
     void setup() {
-        service = new SeatMapService(seatHoldRepository, seatCatalogReader, CLOCK);
+        service = new SeatMapService(seatHoldRepository, seatAssignmentRepository, seatCatalogReader, CLOCK);
     }
 
     @Test
@@ -78,7 +82,7 @@ class SeatMapServiceTest {
                 1002L, OffsetDateTime.parse("2026-08-04T10:05:00Z"),
                 1003L, OffsetDateTime.parse("2026-08-04T10:05:00Z")));
 
-        given(seatHoldRepository.reservedSeatIdsOf(SCHEDULE_ID)).willReturn(Set.of(1003L));
+        given(seatAssignmentRepository.assignedSeatIdsOf(SCHEDULE_ID)).willReturn(Set.of(1003L));
 
         SeatMapResponse response = service.seatMap(SCHEDULE_ID);
 

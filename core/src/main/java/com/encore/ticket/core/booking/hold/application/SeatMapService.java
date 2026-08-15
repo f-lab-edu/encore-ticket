@@ -2,6 +2,7 @@ package com.encore.ticket.core.booking.hold.application;
 
 import com.encore.ticket.core.booking.dto.SeatMapResponse;
 import com.encore.ticket.core.booking.dto.SeatStatus;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
 import com.encore.ticket.core.catalog.domain.SeatInfo;
 
@@ -18,27 +19,28 @@ import lombok.RequiredArgsConstructor;
 public class SeatMapService {
 
     private final SeatHoldRepository seatHoldRepository;
+    private final SeatAssignmentRepository seatAssignmentRepository;
     private final SeatCatalogReader  seatCatalogReader;
     private final Clock clock;
 
     public SeatMapResponse seatMap(Long scheduleId) {
         List<SeatInfo> seats = seatCatalogReader.seatsOf(scheduleId);
         Map<Long, OffsetDateTime> holdExpiry = seatHoldRepository.holdExpiryBySeatId(scheduleId);
-        Set<Long> reserved = seatHoldRepository.reservedSeatIdsOf(scheduleId);
+        Set<Long> assigned = seatAssignmentRepository.assignedSeatIdsOf(scheduleId);
         OffsetDateTime now = OffsetDateTime.now(clock);
 
         List<SeatMapResponse.Seat> result = seats.stream()
                 .map(seat -> new SeatMapResponse.Seat(
                         seat.id(),
                         seat.section(), seat.row(), seat.number(), seat.grade(), seat.price(),
-                        statusOf(seat.id(), holdExpiry, reserved, now)
+                        statusOf(seat.id(), holdExpiry, assigned, now)
                 )).toList();
 
         return new SeatMapResponse(scheduleId, result);
     }
 
-    private SeatStatus statusOf(Long seatId, Map<Long, OffsetDateTime> holdExpiry, Set<Long> reserved, OffsetDateTime now) {
-        if (reserved.contains(seatId)) {
+    private SeatStatus statusOf(Long seatId, Map<Long, OffsetDateTime> holdExpiry, Set<Long> assigned, OffsetDateTime now) {
+        if (assigned.contains(seatId)) {
             return SeatStatus.RESERVED;
         }
 
