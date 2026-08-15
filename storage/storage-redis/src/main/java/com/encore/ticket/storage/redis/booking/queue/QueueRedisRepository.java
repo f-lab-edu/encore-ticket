@@ -10,10 +10,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Repository;
 
 import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
 import com.encore.ticket.core.booking.queue.port.QueuePollOutcome;
@@ -27,67 +27,63 @@ import lombok.RequiredArgsConstructor;
 public class QueueRedisRepository implements QueueRepository {
 
     private static final String TOKEN_PREFIX = "q_";
+    private static final String CREATED = "1";
 
     private static final long CLEANUP_SLACK_MILLIS = 1_000L;
-
-    private static final String CREATED = "1";
-    private static final int OUTCOME = 0;
-    private static final int TOKEN = 1;
-    private static final int MEMBER_ID = 2;
-    private static final int POSITION = 3;
-    private static final int STATUS = 4;
-    private static final int LAST_POLLED_AT = 5;
-    private static final int LAPSES_REMAINING = 6;
-    private static final int ADMITTED_UNTIL = 8;
-    private static final int SEQUENCE = 9;
+    private static final int REQUEST_PURGE_LIMIT = 50;
 
     private final StringRedisTemplate redisTemplate;
-    private final RedisScript<List> enterOrResumeScript;
-    private final RedisScript<List> recordPollScript;
+    private final QueueFunctions functions;
+    private final QueuePolicy policy;
     private final Clock clock;
 
     @Override
     public QueueEnterResult enterOrResume(Long scheduleId, Long memberId, OffsetDateTime now) {
-        List<String> reply = execute(
-                enterOrResumeScript,
+        redisTemplate.opsForZSet()
+                .add(QueueRedisKeys.schedules(), String.valueOf(scheduleId), millis(now));
+
+        Map<String, String> reply = functions.call(
+                QueueFunctions.ENTER_OR_RESUME,
                 List.of(
                         QueueRedisKeys.sequence(scheduleId),
                         QueueRedisKeys.waiting(scheduleId),
                         QueueRedisKeys.expiry(scheduleId),
                         QueueRedisKeys.member(scheduleId, memberId)),
-                String.valueOf(millis(now)),
+                String.valueOf((long) millis(now)),
                 TOKEN_PREFIX + UUID.randomUUID(),
                 String.valueOf(memberId),
                 QueueRedisKeys.schedule(scheduleId),
-                String.valueOf(QueueToken.grace().toMillis()),
-                String.valueOf(QueueToken.MAX_LAPSES),
-                String.valueOf(QueueToken.hardExpiry().toMillis()),
-                String.valueOf(CLEANUP_SLACK_MILLIS));
+                String.valueOf(policy.grace().toMillis()),
+                String.valueOf(policy.maxLapses()),
+                String.valueOf(policy.hardExpiry().toMillis()),
+                String.valueOf(CLEANUP_SLACK_MILLIS),
+                String.valueOf(REQUEST_PURGE_LIMIT));
 
         return new QueueEnterResult(
-                toToken(scheduleId, reply), CREATED.equals(reply.get(OUTCOME)));
+                toToken(scheduleId, reply), CREATED.equals(required(reply, "created")));
     }
 
     @Override
     public QueuePollResult recordPoll(
             Long scheduleId, String queueToken, Long memberId, OffsetDateTime now) {
-        List<String> reply = execute(
-                recordPollScript,
+        Map<String, String> reply = functions.call(
+                QueueFunctions.RECORD_POLL,
                 List.of(
                         QueueRedisKeys.sequence(scheduleId),
                         QueueRedisKeys.waiting(scheduleId),
                         QueueRedisKeys.expiry(scheduleId),
                         QueueRedisKeys.token(scheduleId, queueToken),
                         QueueRedisKeys.member(scheduleId, memberId)),
-                String.valueOf(millis(now)),
+                String.valueOf((long) millis(now)),
                 queueToken,
                 String.valueOf(memberId),
                 QueueRedisKeys.schedule(scheduleId),
-                String.valueOf(QueueToken.grace().toMillis()),
-                String.valueOf(QueueToken.hardExpiry().toMillis()),
-                String.valueOf(CLEANUP_SLACK_MILLIS));
+                String.valueOf(policy.grace().toMillis()),
+                String.valueOf(policy.hardExpiry().toMillis()),
+                String.valueOf(CLEANUP_SLACK_MILLIS),
+                String.valueOf(REQUEST_PURGE_LIMIT));
 
-        QueuePollOutcome outcome = QueuePollOutcome.valueOf(reply.get(OUTCOME));
+        QueuePollOutcome outcome = QueuePollOutcome.valueOf(required(reply, "outcome"));
         if (outcome != QueuePollOutcome.UPDATED) {
             return QueuePollResult.of(outcome);
         }
@@ -101,7 +97,7 @@ public class QueueRedisRepository implements QueueRepository {
         if (fields.isEmpty()) {
             return Optional.empty();
         }
-        if (Long.parseLong(required(fields, "hardExpiresAt")) < Instant.now(clock).toEpochMilli()) {
+        if (Long.parseLong(hashField(fields, "hardExpiresAt")) < Instant.now(clock).toEpochMilli()) {
             return Optional.empty();
         }
 
@@ -112,41 +108,30 @@ public class QueueRedisRepository implements QueueRepository {
         return Optional.of(QueueToken.builder()
                 .token(queueToken)
                 .scheduleId(scheduleId)
-                .memberId(Long.valueOf(required(fields, "memberId")))
+                .memberId(Long.valueOf(hashField(fields, "memberId")))
                 .position(rank == null ? 0 : rank.intValue() + 1)
-                .sequence(Integer.parseInt(required(fields, "sequence")))
-                .status(QueueStatus.valueOf(required(fields, "status")))
-                .lastPolledAt(toOffset(required(fields, "lastPolledAt")))
-                .lapsesRemaining(Integer.parseInt(required(fields, "lapsesRemaining")))
+                .sequence(Integer.parseInt(hashField(fields, "sequence")))
+                .status(QueueStatus.valueOf(hashField(fields, "status")))
+                .lastPolledAt(toOffset(hashField(fields, "lastPolledAt")))
+                .lapsesRemaining(Integer.parseInt(hashField(fields, "lapsesRemaining")))
                 .admittedUntil(admittedUntil == null ? null : toOffset(admittedUntil.toString()))
                 .build());
     }
 
-    @SuppressWarnings("unchecked")
-    private List<String> execute(RedisScript<List> script, List<String> keys, String... args) {
-        List<String> reply = redisTemplate.execute(script, keys, (Object[]) args);
-        if (reply == null || reply.isEmpty()) {
-            throw new IllegalStateException("Redis 대기열 스크립트가 결과를 반환하지 않았습니다.");
-        }
-        return reply;
-    }
-
-    private QueueToken toToken(Long scheduleId, List<String> reply) {
-        String admittedUntil = reply.get(ADMITTED_UNTIL);
+    private QueueToken toToken(Long scheduleId, Map<String, String> reply) {
         return QueueToken.builder()
-                .token(reply.get(TOKEN))
+                .token(required(reply, "token"))
                 .scheduleId(scheduleId)
-                .memberId(Long.valueOf(reply.get(MEMBER_ID)))
-                .position(Integer.parseInt(reply.get(POSITION)))
-                .sequence(Integer.parseInt(reply.get(SEQUENCE)))
-                .status(QueueStatus.valueOf(reply.get(STATUS)))
-                .lastPolledAt(toOffset(reply.get(LAST_POLLED_AT)))
-                .lapsesRemaining(Integer.parseInt(reply.get(LAPSES_REMAINING)))
-                .admittedUntil(admittedUntil.isEmpty() ? null : toOffset(admittedUntil))
+                .memberId(Long.valueOf(required(reply, "memberId")))
+                .position(Integer.parseInt(required(reply, "position")))
+                .sequence(Integer.parseInt(required(reply, "sequence")))
+                .status(QueueStatus.valueOf(required(reply, "status")))
+                .lastPolledAt(toOffset(required(reply, "lastPolledAt")))
+                .lapsesRemaining(Integer.parseInt(required(reply, "lapsesRemaining")))
                 .build();
     }
 
-    private long millis(OffsetDateTime time) {
+    private double millis(OffsetDateTime time) {
         return time.toInstant().toEpochMilli();
     }
 
@@ -154,7 +139,15 @@ public class QueueRedisRepository implements QueueRepository {
         return Instant.ofEpochMilli(Long.parseLong(epochMillis)).atOffset(ZoneOffset.UTC);
     }
 
-    private String required(Map<Object, Object> fields, String name) {
+    private String required(Map<String, String> reply, String name) {
+        String value = reply.get(name);
+        if (value == null) {
+            throw new IllegalStateException("Redis 대기열 응답에 필수 필드가 없습니다: " + name);
+        }
+        return value;
+    }
+
+    private String hashField(Map<Object, Object> fields, String name) {
         Object value = fields.get(name);
         if (value == null) {
             throw new IllegalStateException("Redis 대기열 토큰에 필수 필드가 없습니다: " + name);

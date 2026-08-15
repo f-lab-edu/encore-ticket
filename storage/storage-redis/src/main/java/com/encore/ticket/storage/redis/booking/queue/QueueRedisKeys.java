@@ -7,6 +7,10 @@ final class QueueRedisKeys {
     private QueueRedisKeys() {
     }
 
+    static String schedules() {
+        return PREFIX + "schedules";
+    }
+
     static String schedule(Long scheduleId) {
         return PREFIX + "{%d}".formatted(scheduleId);
     }

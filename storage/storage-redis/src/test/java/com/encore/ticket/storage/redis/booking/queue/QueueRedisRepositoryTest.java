@@ -1,6 +1,7 @@
 package com.encore.ticket.storage.redis.booking.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import java.time.Clock;
@@ -22,19 +23,17 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
 import com.encore.ticket.core.booking.queue.port.QueuePollOutcome;
@@ -44,6 +43,7 @@ import com.encore.ticket.core.booking.queue.port.QueuePollResult;
 class QueueRedisRepositoryTest {
 
     private static final int REDIS_PORT = 6379;
+    private static final QueuePolicy POLICY = QueuePolicy.DEFAULT;
     private static final long SCHEDULE_ID = 1L;
     private static final long MEMBER_ID = 100L;
     private static final long OTHER_MEMBER_ID = 200L;
@@ -58,6 +58,7 @@ class QueueRedisRepositoryTest {
     static StringRedisTemplate redisTemplate;
 
     MutableClock clock;
+    QueueFunctions functions;
     QueueRedisRepository repository;
 
     @BeforeAll
@@ -84,9 +85,9 @@ class QueueRedisRepositoryTest {
         }
 
         clock = new MutableClock(T0.toInstant());
-        repository = new QueueRedisRepository(
-                redisTemplate, script("scripts/enter-or-resume.lua"),
-                script("scripts/record-poll.lua"), clock);
+        functions = new QueueFunctions(redisTemplate);
+        functions.load();
+        repository = new QueueRedisRepository(redisTemplate, functions, POLICY, clock);
     }
 
     @Test
@@ -151,7 +152,7 @@ class QueueRedisRepositoryTest {
     void 진입이_만든_키는_모두_같은_시각에_만료된다() {
         QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
 
-        long deadline = T0.plus(QueueToken.hardExpiry()).toInstant().toEpochMilli() + 1_000L;
+        long deadline = T0.plus(POLICY.hardExpiry()).toInstant().toEpochMilli() + 1_000L;
 
         assertThat(physicalExpireAt(tokenKey(entered.token().token())))
                 .isCloseTo(deadline, within(2_000L));
@@ -170,7 +171,7 @@ class QueueRedisRepositoryTest {
         assertThat(again.created()).isFalse();
         assertThat(again.token().token()).isEqualTo(first.token().token());
         assertThat(again.token().sequence()).isEqualTo(first.token().sequence());
-        assertThat(again.token().lapsesRemaining()).isEqualTo(QueueToken.MAX_LAPSES);
+        assertThat(again.token().lapsesRemaining()).isEqualTo(POLICY.maxLapses());
     }
 
     @Test
@@ -220,7 +221,7 @@ class QueueRedisRepositoryTest {
         assertThat(again.token().token()).isNotEqualTo(first.token().token());
         assertThat(again.token().sequence()).isEqualTo(2);
         assertThat(again.token().position()).isEqualTo(1);
-        assertThat(again.token().lapsesRemaining()).isEqualTo(QueueToken.MAX_LAPSES);
+        assertThat(again.token().lapsesRemaining()).isEqualTo(POLICY.maxLapses());
 
         assertThat(redisTemplate.hasKey(tokenKey(first.token().token()))).isFalse();
         assertThat(waitingMembers()).containsExactly(again.token().token());
@@ -269,10 +270,10 @@ class QueueRedisRepositoryTest {
 
         assertThat(result.outcome()).isEqualTo(QueuePollOutcome.UPDATED);
         assertThat(result.token().lastPolledAt()).isEqualTo(polledAt);
-        assertThat(result.token().lapsesRemaining()).isEqualTo(QueueToken.MAX_LAPSES);
+        assertThat(result.token().lapsesRemaining()).isEqualTo(POLICY.maxLapses());
         assertThat(result.token().position()).isEqualTo(1);
 
-        long hardExpiresAt = polledAt.plus(QueueToken.hardExpiry()).toInstant().toEpochMilli();
+        long hardExpiresAt = polledAt.plus(POLICY.hardExpiry()).toInstant().toEpochMilli();
         assertThat(hashField(entered.token().token(), "hardExpiresAt"))
                 .isEqualTo(String.valueOf(hardExpiresAt));
         assertThat(physicalExpireAt(tokenKey(entered.token().token())))
@@ -354,7 +355,7 @@ class QueueRedisRepositoryTest {
         assertThat(found.sequence()).isEqualTo(1);
         assertThat(found.status()).isEqualTo(QueueStatus.WAITING);
         assertThat(found.lastPolledAt()).isEqualTo(T0);
-        assertThat(found.lapsesRemaining()).isEqualTo(QueueToken.MAX_LAPSES);
+        assertThat(found.lapsesRemaining()).isEqualTo(POLICY.maxLapses());
         assertThat(found.admittedUntil()).isNull();
     }
 
@@ -367,25 +368,31 @@ class QueueRedisRepositoryTest {
     }
 
     @Test
-    void 입장_허용_토큰은_유예를_쓰지_않고_그대로_돌려준다() {
+    void 입장_허용_토큰을_만나면_상태_조회가_명시적으로_실패한다() {
+        String token = admitToken();
+
+        assertThatThrownBy(() -> repository.recordPoll(
+                SCHEDULE_ID, token, MEMBER_ID, T0.plusMinutes(12)))
+                .hasMessageContaining("ADMITTED_NOT_SUPPORTED");
+    }
+
+    @Test
+    void 입장_허용_토큰을_만나면_재진입이_명시적으로_실패한다() {
+        admitToken();
+
+        assertThatThrownBy(() -> repository.enterOrResume(
+                SCHEDULE_ID, MEMBER_ID, T0.plusMinutes(1)))
+                .hasMessageContaining("ADMITTED_NOT_SUPPORTED");
+    }
+
+    private String admitToken() {
         QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
         String token = entered.token().token();
-        OffsetDateTime admittedUntil = T0.plusMinutes(30);
         redisTemplate.opsForHash().putAll(tokenKey(token), Map.of(
                 "status", QueueStatus.ADMITTED.name(),
-                "admittedUntil", String.valueOf(admittedUntil.toInstant().toEpochMilli())));
+                "admittedUntil", String.valueOf(T0.plusMinutes(30).toInstant().toEpochMilli())));
         redisTemplate.opsForZSet().remove(waitingKey(), token);
-
-        QueuePollResult result = repository.recordPoll(
-                SCHEDULE_ID, token, MEMBER_ID, T0.plusMinutes(12));
-
-        assertThat(result.outcome()).isEqualTo(QueuePollOutcome.UPDATED);
-        assertThat(result.token().status()).isEqualTo(QueueStatus.ADMITTED);
-        assertThat(result.token().position()).isZero();
-        assertThat(result.token().admittedUntil()).isEqualTo(admittedUntil);
-        assertThat(result.token().lapsesRemaining()).isEqualTo(QueueToken.MAX_LAPSES);
-        assertThat(hashField(token, "lastPolledAt"))
-                .isEqualTo(String.valueOf(T0.toInstant().toEpochMilli()));
+        return token;
     }
 
     @Test
@@ -396,13 +403,6 @@ class QueueRedisRepositoryTest {
         assertThat(first.token().sequence()).isEqualTo(1);
         assertThat(other.token().sequence()).isEqualTo(1);
         assertThat(first.token().token()).isNotEqualTo(other.token().token());
-    }
-
-    private RedisScript<List> script(String location) {
-        DefaultRedisScript<List> script = new DefaultRedisScript<>();
-        script.setLocation(new ClassPathResource(location));
-        script.setResultType(List.class);
-        return script;
     }
 
     private String waitingKey() {
