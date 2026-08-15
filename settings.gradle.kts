@@ -23,6 +23,7 @@ rootProject.name = "ticket"
 include(
     "app",
     "core",
+    "storage:storage-db",
 )
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
