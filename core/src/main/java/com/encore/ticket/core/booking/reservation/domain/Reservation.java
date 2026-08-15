@@ -19,7 +19,7 @@ public class Reservation {
     private static final int PAYMENT_WINDOW_MINUTES = 10;
 
     private final Long id;
-
+    private final String holdId;
     private final Long memberId;
     private final Long scheduleId;
     private final List<Long> seatIds;
@@ -39,6 +39,7 @@ public class Reservation {
         OffsetDateTime paymentDeadline = now.plusMinutes(PAYMENT_WINDOW_MINUTES);
 
         return builder()
+                .holdId(hold.holdId())
                 .memberId(hold.memberId())
                 .scheduleId(hold.scheduleId())
                 .seatIds(hold.seatIds())

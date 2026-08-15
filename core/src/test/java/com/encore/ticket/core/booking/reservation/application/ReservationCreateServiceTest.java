@@ -101,7 +101,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 최초_요청이면_결제_창을_새로_열어_결제_대기_예매를_만든다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
         given(reservationRepository.save(any()))
@@ -129,7 +129,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 결제_창은_선점_만료가_아니라_예매_생성_시점부터_10분이다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
         given(reservationRepository.save(any()))
@@ -148,7 +148,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 주문명은_콘서트명과_등급과_나머지_매수를_담는다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
         given(reservationRepository.save(any()))
@@ -161,7 +161,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 좌석이_한_장이면_주문명에_나머지_매수를_붙이지_않는다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(List.of(new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", SEAT_PRICE)));
         given(reservationRepository.save(any()))
@@ -174,7 +174,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 다른_사용자의_선점으로_예매를_생성하면_실패한다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(OTHER_MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(OTHER_MEMBER_ID, HOLD_EXPIRES_AT));
 
         assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
                 .isInstanceOf(HoldNotOwnedException.class);
@@ -184,7 +184,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 선점_만료_시각에_도달한_뒤_예매를_생성하면_실패한다() {
-        given(holdReader.findByHoldId(HOLD_ID))
+        given(holdReader.getByHoldId(HOLD_ID))
                 .willReturn(hold(MEMBER_ID, OffsetDateTime.parse("2026-08-04T10:00:00Z")));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
 
@@ -196,7 +196,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 결제_시도가_없던_예매로_재요청하면_기존_주문번호를_그대로_돌려준다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.PENDING_PAYMENT, 1, EXTENDED_EXPIRES_AT)));
         givenCatalog(vipSeats());
@@ -213,7 +213,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 결제가_진행_중이면_새_주문번호를_발급하지_않는다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT)));
         givenCatalog(vipSeats());
@@ -229,7 +229,7 @@ class ReservationCreateServiceTest {
     @Test
     void 직전_결제가_실패했으면_다음_시도번호로_주문번호를_발급한다() {
         Reservation reservation = existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT);
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.of(reservation));
         givenCatalog(vipSeats());
 
@@ -243,7 +243,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 확정된_예매로_재요청하면_확정_상태를_그대로_돌려준다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.CONFIRMED, 1, HOLD_EXPIRES_AT)));
         givenCatalog(vipSeats());
@@ -259,7 +259,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 취소된_예매의_선점으로_재요청하면_실패한다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.CANCELLED, 1, HOLD_EXPIRES_AT)));
 
@@ -271,7 +271,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 만료된_예매의_선점으로_재요청하면_실패한다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.EXPIRED, 1, HOLD_EXPIRES_AT)));
 
@@ -283,7 +283,7 @@ class ReservationCreateServiceTest {
 
     @Test
     void 예매_만료_시각에_도달했으면_재요청도_실패한다() {
-        given(holdReader.findByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.of(existing(
                 ReservationStatus.PENDING_PAYMENT, 1, OffsetDateTime.parse("2026-08-04T10:00:00Z"))));
 

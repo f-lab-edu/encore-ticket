@@ -38,7 +38,7 @@ class ConcertLikeServiceTest {
                 .id(CONCERT_ID)
                 .likeCount(likeCount)
                 .build();
-        given(concertRepository.findById(CONCERT_ID)).willReturn(concert);
+        given(concertRepository.getById(CONCERT_ID)).willReturn(concert);
         return concert;
     }
 

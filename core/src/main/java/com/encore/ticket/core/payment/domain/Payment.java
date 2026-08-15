@@ -4,12 +4,17 @@ import com.encore.ticket.core.payment.dto.PaymentStatus;
 
 import java.time.OffsetDateTime;
 
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@AllArgsConstructor
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Payment {
+
+    private final Long id;
 
     private final String paymentKey;
     private final String orderId;
@@ -24,8 +29,15 @@ public class Payment {
     private String failReason;
 
     public static Payment accept(String paymentKey, String orderId, Long amount, ReservationCharge charge) {
-        return new Payment(paymentKey, orderId, amount, charge.reservationId(), charge.memberId(), charge.holdId(),
-                PaymentStatus.PENDING, null, null, null);
+        return builder()
+                .paymentKey(paymentKey)
+                .orderId(orderId)
+                .amount(amount)
+                .reservationId(charge.reservationId())
+                .memberId(charge.memberId())
+                .holdId(charge.holdId())
+                .status(PaymentStatus.PENDING)
+                .build();
     }
 
     public boolean isOwnedBy(Long memberId) {

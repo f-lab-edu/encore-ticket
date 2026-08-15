@@ -48,7 +48,7 @@ public class QueueService {
     }
 
     public QueueStatusResponse status(Long scheduleId, String queueToken, Long memberId) {
-        QueueToken token = queueRepository.findByToken(scheduleId, queueToken);
+        QueueToken token = queueRepository.getByToken(scheduleId, queueToken);
         if (!token.isOwnedBy(memberId)) {
             throw new QueueTokenNotOwnedException();
         }

@@ -30,7 +30,7 @@ public class ReservationCreateService {
     private final Clock clock;
 
     public CreateResult create(String holdId, Long memberId, PaymentAttemptState lastAttempt) {
-        HeldSeats hold = holdReader.findByHoldId(holdId);
+        HeldSeats hold = holdReader.getByHoldId(holdId);
         if (!hold.isOwnedBy(memberId)) {
             throw new HoldNotOwnedException();
         }
