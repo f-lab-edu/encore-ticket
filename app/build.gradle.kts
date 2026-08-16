@@ -19,5 +19,11 @@ dependencies {
     implementation(libs.spring.boot.starter.security)
     developmentOnly(platform(SpringBootPlugin.BOM_COORDINATES))
     developmentOnly("org.springframework.boot:spring-boot-docker-compose")
-    runtimeOnly("com.mysql:mysql-connector-j")
+
+    runtimeOnly(projects.storage.storageDb)
+    runtimeOnly(projects.storage.storageRedis)
+
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:testcontainers-mysql")
+    testImplementation("com.redis:testcontainers-redis")
 }

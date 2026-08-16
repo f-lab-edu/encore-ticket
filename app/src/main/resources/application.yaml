@@ -1,3 +1,22 @@
 spring:
   application:
     name: ticket
+
+  datasource:
+    url: jdbc:mysql://127.0.0.1:13306/ticket?connectionTimeZone=UTC&characterEncoding=UTF-8
+    username: ticket
+    password: ticket
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 16379
