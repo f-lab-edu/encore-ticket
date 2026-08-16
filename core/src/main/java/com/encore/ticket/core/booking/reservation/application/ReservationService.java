@@ -35,10 +35,10 @@ public class ReservationService {
             throw new PaymentInProgressException();
         }
 
-        reservation.cancel(clock);
-        reservationRepository.save(reservation);
+        Reservation cancelled = reservation.cancel(clock);
+        reservationRepository.save(cancelled);
         seatAssignmentRepository.release(reservationId);
 
-        return new CancelResult(new ReservationCancelResponse(reservation.id(), reservation.status(), reservation.cancelledAt()), false);
+        return new CancelResult(new ReservationCancelResponse(cancelled.id(), cancelled.status(), cancelled.cancelledAt()), false);
     }
 }

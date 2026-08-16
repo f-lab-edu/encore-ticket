@@ -10,7 +10,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class Reservation {
 
     private static final String ORDER_ID_PREFIX = "reservation-";
@@ -29,11 +29,11 @@ public class Reservation {
     private final OffsetDateTime performanceStartsAt;
     private final OffsetDateTime reservedAt;
 
-    private ReservationStatus status;
-    private OffsetDateTime expiresAt;
-    private int paymentAttemptNo;
-    private OffsetDateTime paymentStartsAt;
-    private OffsetDateTime cancelledAt;
+    private final ReservationStatus status;
+    private final OffsetDateTime expiresAt;
+    private final int paymentAttemptNo;
+    private final OffsetDateTime paymentStartsAt;
+    private final OffsetDateTime cancelledAt;
 
     public static Reservation create(HeldSeats hold, Long amount, OffsetDateTime performanceStartsAt, Clock clock) {
         OffsetDateTime now = OffsetDateTime.now(clock);
@@ -74,13 +74,17 @@ public class Reservation {
         return paymentStartsAt != null;
     }
 
-    public void cancel(Clock clock) {
-        status = ReservationStatus.CANCELLED;
-        cancelledAt = OffsetDateTime.now(clock);
+    public Reservation cancel(Clock clock) {
+        return toBuilder()
+                .status(ReservationStatus.CANCELLED)
+                .cancelledAt(OffsetDateTime.now(clock))
+                .build();
     }
 
-    public void startNextPaymentAttempt() {
-        paymentAttemptNo++;
+    public Reservation startNextPaymentAttempt() {
+        return toBuilder()
+                .paymentAttemptNo(paymentAttemptNo + 1)
+                .build();
     }
 
     public boolean isOwnedBy(Long memberId) {

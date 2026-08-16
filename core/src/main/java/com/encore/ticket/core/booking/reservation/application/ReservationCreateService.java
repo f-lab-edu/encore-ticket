@@ -41,16 +41,18 @@ public class ReservationCreateService {
                 .orElseGet(() -> new CreateResult(issueFresh(hold), true));
     }
 
-    private ReservationCreateResponse resume(Reservation reservation, HeldSeats hold,
+    private ReservationCreateResponse resume(Reservation stored, HeldSeats hold,
                                              PaymentAttemptState lastAttempt) {
-        if (reservation.isCancelled()) {
+        if (stored.isCancelled()) {
             throw new ReservationCancelledException();
         }
-        if (reservation.isExpired(clock)) {
+        if (stored.isExpired(clock)) {
             throw new HoldExpiredException();
         }
-        if (reservation.isPendingPayment() && lastAttempt == PaymentAttemptState.FAILED) {
-            reservation.startNextPaymentAttempt();
+
+        Reservation reservation = stored;
+        if (stored.isPendingPayment() && lastAttempt == PaymentAttemptState.FAILED) {
+            reservation = stored.startNextPaymentAttempt();
             reservationRepository.save(reservation);
         }
 

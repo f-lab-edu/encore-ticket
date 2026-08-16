@@ -34,8 +34,8 @@ public class TokenService {
             throw new InvalidRefreshTokenException();
         }
 
-        token.rotate();
-        refreshTokenRepository.save(token);
+        RefreshToken rotated = token.rotate();
+        refreshTokenRepository.save(rotated);
 
         String newRawToken = refreshTokenGenerator.generate();
         refreshTokenRepository.save(
