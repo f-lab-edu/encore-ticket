@@ -2,10 +2,8 @@ package com.encore.ticket.core.catalog.application;
 
 import com.encore.ticket.core.catalog.dto.ConcertRankingResponse;
 
-import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.IntStream;
 import com.encore.ticket.core.catalog.domain.ConcertScore;
 import com.encore.ticket.core.catalog.port.ConcertRankingRepository;
@@ -20,14 +18,13 @@ public class ConcertRankingService {
     private final ConcertRankingRepository concertRankingRepository;
 
     public ConcertRankingResponse ranking(int limit) {
-        Optional<OffsetDateTime> snapshotAt = concertRankingRepository.latestSnapshotAt();
-        if (snapshotAt.isEmpty()) {
-            return new ConcertRankingResponse(null, rank(concertRankingRepository.bookingOpenSoon(limit)));
-        }
-
-        return new ConcertRankingResponse(
-                snapshotAt.get(),
-                rank(concertRankingRepository.scoresAt(snapshotAt.get(), limit)));
+        return concertRankingRepository.latestSnapshotAt()
+                .map(snapshotAt -> new ConcertRankingResponse(
+                        snapshotAt,
+                        rank(concertRankingRepository.scoresAt(snapshotAt, limit))))
+                .orElseGet(() -> new ConcertRankingResponse(
+                        null,
+                        rank(concertRankingRepository.bookingOpenSoon(limit))));
     }
 
     private List<ConcertRankingResponse.Item> rank(List<ConcertScore> scores) {

@@ -13,7 +13,6 @@ import com.encore.ticket.core.catalog.domain.SeatInfo;
 
 import java.time.Clock;
 import java.util.List;
-import java.util.Optional;
 import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
@@ -37,15 +36,13 @@ public class ReservationCreateService {
             throw new HoldNotOwnedException();
         }
 
-        Optional<Reservation> found = reservationRepository.findByHoldId(holdId);
-        if (found.isEmpty()) {
-            if (hold.isExpired(clock)) {
-                throw new HoldExpiredException();
-            }
-            return new CreateResult(issue(hold), true);
-        }
+        return reservationRepository.findByHoldId(holdId)
+                .map(reservation -> new CreateResult(resume(reservation, hold, lastAttempt), false))
+                .orElseGet(() -> new CreateResult(issueFresh(hold), true));
+    }
 
-        Reservation reservation = found.get();
+    private ReservationCreateResponse resume(Reservation reservation, HeldSeats hold,
+                                             PaymentAttemptState lastAttempt) {
         if (reservation.isCancelled()) {
             throw new ReservationCancelledException();
         }
@@ -59,10 +56,14 @@ public class ReservationCreateService {
 
         List<SeatInfo> seats = seatCatalogReader.seatsByIds(hold.seatIds());
         ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(hold.scheduleId());
-        return new CreateResult(toResponse(reservation, schedule, seats), false);
+        return toResponse(reservation, schedule, seats);
     }
 
-    private ReservationCreateResponse issue(HeldSeats hold) {
+    private ReservationCreateResponse issueFresh(HeldSeats hold) {
+        if (hold.isExpired(clock)) {
+            throw new HoldExpiredException();
+        }
+
         List<SeatInfo> seats = seatCatalogReader.seatsByIds(hold.seatIds());
         ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(hold.scheduleId());
         long amount = seats.stream().mapToLong(SeatInfo::price).sum();
