@@ -12,10 +12,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
+
+import com.encore.ticket.support.ContainersConfig;
 
 import java.util.regex.Pattern;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(ContainersConfig.class)
 public abstract class ApiSpecTestSupport {
 
     protected static final String PROBLEM_JSON = "application/problem+json";

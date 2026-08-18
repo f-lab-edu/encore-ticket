@@ -1,10 +1,8 @@
 package com.encore.ticket;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
-class TicketApplicationTests {
+class TicketApplicationTests extends ApiSpecTestSupport {
 
 	@Test
 	void contextLoads() {
