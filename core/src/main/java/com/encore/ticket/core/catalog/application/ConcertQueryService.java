@@ -14,8 +14,11 @@ import com.encore.ticket.core.catalog.port.ConcertCatalogReader;
 import com.encore.ticket.core.catalog.port.ConcertLikeRepository;
 import com.encore.ticket.core.catalog.port.ConcertRepository;
 
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class ConcertQueryService {
 

@@ -13,8 +13,11 @@ import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class SeatHoldService {
 

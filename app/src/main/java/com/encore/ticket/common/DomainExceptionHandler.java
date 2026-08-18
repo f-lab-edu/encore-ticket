@@ -44,6 +44,7 @@ public class DomainExceptionHandler {
 
         ProblemDetail problemDetail =
                 ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setProperty("code", HttpStatus.NOT_FOUND.name());
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problemDetail);
     }
