@@ -13,8 +13,11 @@ import java.util.Map;
 import java.util.Set;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class SeatMapService {
 

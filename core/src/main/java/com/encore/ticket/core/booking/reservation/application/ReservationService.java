@@ -10,8 +10,11 @@ import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
 import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class ReservationService {
 

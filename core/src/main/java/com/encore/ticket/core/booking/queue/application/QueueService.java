@@ -13,8 +13,11 @@ import com.encore.ticket.core.exception.NotFoundException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class QueueService {
 

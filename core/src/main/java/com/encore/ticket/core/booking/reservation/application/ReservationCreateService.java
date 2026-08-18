@@ -18,8 +18,11 @@ import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
+@Service
 @RequiredArgsConstructor
 public class ReservationCreateService {
 

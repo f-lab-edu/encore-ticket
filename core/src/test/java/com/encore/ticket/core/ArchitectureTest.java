@@ -24,6 +24,13 @@ class ArchitectureTest {
             slices().matching("com.encore.ticket.core.(*)..")
                     .should().beFreeOfCycles();
 
+    @ArchTest
+    static final ArchRule 도메인과_포트는_스프링을_모른다 =
+            noClasses().that().resideInAPackage("com.encore.ticket.core..")
+                    .and().resideOutsideOfPackage("..application..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("org.springframework..");
+
     /**
      * core 는 웹·영속성 기술을 모른다. 지금은 의존성 자체가 없어 빌드가 막지만,
      * 누가 core 에 그 의존을 추가하려 할 때 규칙 이름으로 먼저 알려준다.
