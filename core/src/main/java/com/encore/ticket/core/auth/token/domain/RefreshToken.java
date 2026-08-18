@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class RefreshToken {
 
     private static final int IDLE_DAYS = 7;
@@ -18,8 +18,8 @@ public class RefreshToken {
     private final Long memberId;
     private final OffsetDateTime absoluteExpiresAt;
 
-    private RefreshTokenStatus status;
-    private OffsetDateTime idleExpiresAt;
+    private final RefreshTokenStatus status;
+    private final OffsetDateTime idleExpiresAt;
 
     public static RefreshToken rotatedFrom(RefreshToken previous, String tokenHash, Clock clock) {
         OffsetDateTime idleExpiresAt = OffsetDateTime.now(clock).plusDays(IDLE_DAYS);
@@ -50,7 +50,9 @@ public class RefreshToken {
         return !now.isBefore(idleExpiresAt) || !now.isBefore(absoluteExpiresAt);
     }
 
-    public void rotate() {
-        status = RefreshTokenStatus.ROTATED;
+    public RefreshToken rotate() {
+        return toBuilder()
+                .status(RefreshTokenStatus.ROTATED)
+                .build();
     }
 }

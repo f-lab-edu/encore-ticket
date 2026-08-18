@@ -100,13 +100,13 @@ class TokenServiceTest {
 
     @Test
     void 재발급하면_기존_토큰은_ROTATED가_되고_같은_family에_새_토큰이_저장된다() {
-        RefreshToken stored = givenStored(token(RefreshTokenStatus.ACTIVE, IDLE_EXPIRES_AT, ABSOLUTE_EXPIRES_AT));
+        givenStored(token(RefreshTokenStatus.ACTIVE, IDLE_EXPIRES_AT, ABSOLUTE_EXPIRES_AT));
         givenNewTokenIssued();
 
         service.refresh(RAW_TOKEN);
 
         List<RefreshToken> saved = savedTokens();
-        assertThat(saved.get(0)).isSameAs(stored);
+        assertThat(saved.get(0).tokenHash()).isEqualTo(TOKEN_HASH);
         assertThat(saved.get(0).status()).isEqualTo(RefreshTokenStatus.ROTATED);
 
         RefreshToken issued = saved.get(1);

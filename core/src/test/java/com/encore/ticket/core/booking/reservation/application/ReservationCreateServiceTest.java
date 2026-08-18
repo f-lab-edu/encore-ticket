@@ -241,7 +241,9 @@ class ReservationCreateServiceTest {
         assertThat(result.created()).isFalse();
         assertThat(result.response().orderId()).isEqualTo("reservation-501-2");
 
-        verify(reservationRepository).save(reservation);
+        ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
+        verify(reservationRepository).save(captor.capture());
+        assertThat(captor.getValue().paymentAttemptNo()).isEqualTo(2);
     }
 
     @Test

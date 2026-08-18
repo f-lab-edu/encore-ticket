@@ -7,6 +7,7 @@ import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -61,7 +62,11 @@ class ReservationServiceTest {
         assertThat(result.response().status()).isEqualTo(ReservationStatus.CANCELLED);
         assertThat(result.response().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
 
-        verify(reservationRepository).save(reservation);
+        ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
+        verify(reservationRepository).save(captor.capture());
+        assertThat(captor.getValue().id()).isEqualTo(RESERVATION_ID);
+        assertThat(captor.getValue().status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(captor.getValue().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
     }
 
     @Test
