@@ -18,3 +18,8 @@ spring:
     redis:
       host: 127.0.0.1
       port: 16379
+
+  docker:
+    compose:
+      start:
+        skip: never
