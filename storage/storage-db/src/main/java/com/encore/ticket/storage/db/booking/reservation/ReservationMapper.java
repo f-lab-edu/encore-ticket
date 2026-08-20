@@ -1,6 +1,7 @@
 package com.encore.ticket.storage.db.booking.reservation;
 
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
+import com.encore.ticket.storage.db.booking.seat.SeatAssignmentEntity;
 
 import java.util.List;
 
@@ -53,6 +54,16 @@ final class ReservationMapper {
                 .map(seatId -> ReservationSeatEntity.builder()
                         .reservationId(reservationId)
                         .seatId(seatId)
+                        .scheduleId(reservation.scheduleId())
+                        .build())
+                .toList();
+    }
+
+    static List<SeatAssignmentEntity> toSeatAssignmentEntities(Reservation reservation, Long reservationId) {
+        return reservation.seatIds().stream()
+                .map(seatId -> SeatAssignmentEntity.builder()
+                        .seatId(seatId)
+                        .reservationId(reservationId)
                         .scheduleId(reservation.scheduleId())
                         .build())
                 .toList();

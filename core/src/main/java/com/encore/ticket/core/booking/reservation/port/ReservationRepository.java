@@ -22,4 +22,8 @@ public interface ReservationRepository {
     long countByMemberId(Long memberId);
 
     Reservation save(Reservation reservation);
+
+    Reservation saveIssued(Reservation reservation);
+
+    Reservation saveCancelled(Reservation cancelled);
 }
