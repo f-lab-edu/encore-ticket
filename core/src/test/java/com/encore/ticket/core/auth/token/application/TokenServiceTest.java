@@ -79,9 +79,10 @@ class TokenServiceTest {
     }
 
     private List<RefreshToken> savedTokens() {
-        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
-        verify(refreshTokenRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        return captor.getAllValues();
+        ArgumentCaptor<RefreshToken> rotated = ArgumentCaptor.forClass(RefreshToken.class);
+        ArgumentCaptor<RefreshToken> issued = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).saveRotation(rotated.capture(), issued.capture());
+        return List.of(rotated.getValue(), issued.getValue());
     }
 
     @Test
@@ -146,7 +147,7 @@ class TokenServiceTest {
 
         verify(refreshTokenGenerator, never()).hash(any());
         verify(refreshTokenRepository, never()).findByTokenHash(any());
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
     }
 
     @Test
@@ -157,7 +158,7 @@ class TokenServiceTest {
         assertThatThrownBy(() -> service.refresh(RAW_TOKEN))
                 .isInstanceOf(InvalidRefreshTokenException.class);
 
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
         verify(refreshTokenRepository, never()).revokeFamily(anyString());
     }
 
@@ -168,7 +169,7 @@ class TokenServiceTest {
         assertThatThrownBy(() -> service.refresh(RAW_TOKEN))
                 .isInstanceOf(InvalidRefreshTokenException.class);
 
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
     }
 
     @Test
@@ -178,7 +179,7 @@ class TokenServiceTest {
         assertThatThrownBy(() -> service.refresh(RAW_TOKEN))
                 .isInstanceOf(InvalidRefreshTokenException.class);
 
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
     }
 
     @Test
@@ -189,7 +190,7 @@ class TokenServiceTest {
                 .isInstanceOf(InvalidRefreshTokenException.class);
 
         verify(refreshTokenRepository).revokeFamily(FAMILY_ID);
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
     }
 
     @Test
@@ -200,7 +201,7 @@ class TokenServiceTest {
                 .isInstanceOf(InvalidRefreshTokenException.class);
 
         verify(refreshTokenRepository, never()).revokeFamily(anyString());
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).saveRotation(any(), any());
     }
 
     @Test

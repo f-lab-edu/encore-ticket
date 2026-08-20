@@ -8,5 +8,7 @@ public interface RefreshTokenRepository {
 
     public void save(RefreshToken refreshToken);
 
+    public void saveRotation(RefreshToken rotated, RefreshToken issued);
+
     public void revokeFamily(String tokenFamilyId);
 }
