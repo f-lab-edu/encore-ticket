@@ -1,9 +1,9 @@
 package com.encore.ticket.storage.redis.booking.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +19,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.queue.domain.QueueAdmissionPolicy;
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
+import com.encore.ticket.core.booking.queue.port.QueueAdmissionResult;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
 import com.encore.ticket.core.booking.queue.port.QueuePollOutcome;
 import com.encore.ticket.core.booking.queue.port.QueuePollResult;
@@ -30,6 +32,7 @@ import com.encore.ticket.storage.redis.support.RedisContainerSupport;
 class QueueRedisRepositoryTest extends RedisContainerSupport {
 
     private static final QueuePolicy POLICY = QueuePolicy.DEFAULT;
+    private static final QueueAdmissionPolicy ADMISSION_POLICY = admissionPolicy(100, 500, 100);
     private static final long SCHEDULE_ID = 1L;
     private static final long MEMBER_ID = 100L;
     private static final long OTHER_MEMBER_ID = 200L;
@@ -76,6 +79,14 @@ class QueueRedisRepositoryTest extends RedisContainerSupport {
         assertThat(results).extracting(result -> result.token().position())
                 .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7, 8);
         assertThat(waitingSize()).isEqualTo(members);
+    }
+
+    @Test
+    void WAITING_생성과_Admission_회차_등록은_같은_Function에서_완료된다() {
+        repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+
+        assertThat(waitingSize()).isEqualTo(1);
+        assertThat(admissionSchedules()).contains(String.valueOf(SCHEDULE_ID));
     }
 
     @Test
@@ -325,31 +336,219 @@ class QueueRedisRepositoryTest extends RedisContainerSupport {
     }
 
     @Test
-    void 입장_허용_토큰을_만나면_상태_조회가_명시적으로_실패한다() {
-        String token = admitToken();
+    void 입장_허용_토큰은_최초_lease_동안_조회할_수_있고_조회로_연장되지_않는다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        repository.admit(T0, ADMISSION_POLICY);
 
-        assertThatThrownBy(() -> repository.recordPoll(
-                SCHEDULE_ID, token, MEMBER_ID, T0.plusMinutes(12)))
-                .hasMessageContaining("ADMITTED_NOT_SUPPORTED");
+        QueuePollResult result = repository.recordPoll(
+                SCHEDULE_ID, entered.token().token(), MEMBER_ID, T0.plusMinutes(4));
+
+        assertThat(result.outcome()).isEqualTo(QueuePollOutcome.UPDATED);
+        assertThat(result.token().status()).isEqualTo(QueueStatus.ADMITTED);
+        assertThat(result.token().admittedUntil()).isEqualTo(T0.plusMinutes(5));
+        assertThat(hashField(entered.token().token(), "admittedUntil"))
+                .isEqualTo(String.valueOf(T0.plusMinutes(5).toInstant().toEpochMilli()));
     }
 
     @Test
-    void 입장_허용_토큰을_만나면_재진입이_명시적으로_실패한다() {
-        admitToken();
+    void 입장_허용_토큰으로_재진입하면_같은_토큰을_유지한다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        repository.admit(T0, ADMISSION_POLICY);
 
-        assertThatThrownBy(() -> repository.enterOrResume(
-                SCHEDULE_ID, MEMBER_ID, T0.plusMinutes(1)))
-                .hasMessageContaining("ADMITTED_NOT_SUPPORTED");
+        QueueEnterResult resumed = repository.enterOrResume(
+                SCHEDULE_ID, MEMBER_ID, T0.plusMinutes(1));
+
+        assertThat(resumed.created()).isFalse();
+        assertThat(resumed.token().token()).isEqualTo(entered.token().token());
+        assertThat(resumed.token().status()).isEqualTo(QueueStatus.ADMITTED);
+        assertThat(resumed.token().admittedUntil()).isEqualTo(T0.plusMinutes(5));
     }
 
-    private String admitToken() {
+    @Test
+    void 최근에_polling한_WAITING만_FIFO로_입장시킨다() {
+        QueueEnterResult inactive = repository.enterOrResume(SCHEDULE_ID, 100L, T0);
+        QueueEnterResult firstActive = repository.enterOrResume(SCHEDULE_ID, 200L, T0);
+        QueueEnterResult secondActive = repository.enterOrResume(SCHEDULE_ID, 300L, T0);
+        OffsetDateTime runAt = T0.plusMinutes(6);
+        repository.recordPoll(SCHEDULE_ID, firstActive.token().token(), 200L, runAt);
+        repository.recordPoll(SCHEDULE_ID, secondActive.token().token(), 300L, runAt);
+
+        QueueAdmissionResult result = repository.admit(runAt, admissionPolicy(10, 10, 1));
+
+        assertThat(result).isEqualTo(QueueAdmissionResult.completed(1));
+        assertThat(statusOf(inactive.token().token())).isEqualTo(QueueStatus.WAITING.name());
+        assertThat(statusOf(firstActive.token().token())).isEqualTo(QueueStatus.ADMITTED.name());
+        assertThat(statusOf(secondActive.token().token())).isEqualTo(QueueStatus.WAITING.name());
+    }
+
+    @Test
+    void 회차별_FIFO와_회차_간_round_robin으로_입장시킨다() {
+        List<QueueEnterResult> firstSchedule = enterMembers(1L, 100L, 3);
+        List<QueueEnterResult> secondSchedule = enterMembers(2L, 200L, 3);
+
+        QueueAdmissionResult result = repository.admit(T0, admissionPolicy(2, 3, 3));
+
+        assertThat(result.admittedCount()).isEqualTo(3);
+        assertThat(admittedMembers(1L)).containsExactlyInAnyOrder(
+                firstSchedule.get(0).token().token(), firstSchedule.get(1).token().token());
+        assertThat(admittedMembers(2L)).containsExactly(secondSchedule.get(0).token().token());
+        assertThat(waitingMembers(1L)).containsExactly(firstSchedule.get(2).token().token());
+        assertThat(waitingMembers(2L)).containsExactly(
+                secondSchedule.get(1).token().token(), secondSchedule.get(2).token().token());
+    }
+
+    @Test
+    void 실행_사이에도_회차_cursor를_유지해_다음_회차부터_입장시킨다() {
+        QueueEnterResult firstSchedule = repository.enterOrResume(1L, 100L, T0);
+        QueueEnterResult secondSchedule = repository.enterOrResume(2L, 200L, T0);
+        QueueAdmissionPolicy onePerRun = admissionPolicy(10, 10, 1);
+
+        repository.admit(T0, onePerRun);
+        repository.admit(T0, onePerRun);
+
+        assertThat(statusOf(1L, firstSchedule.token().token())).isEqualTo(QueueStatus.ADMITTED.name());
+        assertThat(statusOf(2L, secondSchedule.token().token())).isEqualTo(QueueStatus.ADMITTED.name());
+    }
+
+    @Test
+    void bounded_scan에서_제외한_inactive_후보는_다음_실행의_active_후보를_막지_않는다() {
+        QueueEnterResult inactive = repository.enterOrResume(SCHEDULE_ID, 100L, T0);
+        QueueEnterResult active = repository.enterOrResume(SCHEDULE_ID, 200L, T0);
+        OffsetDateTime runAt = T0.plusMinutes(6);
+        repository.recordPoll(SCHEDULE_ID, active.token().token(), 200L, runAt);
+        QueueAdmissionPolicy oneCandidatePerRun = admissionPolicy(10, 10, 1, 1);
+
+        QueueAdmissionResult firstRun = repository.admit(runAt, oneCandidatePerRun);
+        QueueAdmissionResult secondRun = repository.admit(runAt, oneCandidatePerRun);
+
+        assertThat(firstRun.admittedCount()).isZero();
+        assertThat(secondRun.admittedCount()).isEqualTo(1);
+        assertThat(statusOf(inactive.token().token())).isEqualTo(QueueStatus.WAITING.name());
+        assertThat(statusOf(active.token().token())).isEqualTo(QueueStatus.ADMITTED.name());
+    }
+
+    @Test
+    void active_후보가_없는_회차는_스캔에서_빠지고_polling하면_다시_등록된다() {
         QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
-        String token = entered.token().token();
-        redisTemplate.opsForHash().putAll(tokenKey(token), Map.of(
-                "status", QueueStatus.ADMITTED.name(),
-                "admittedUntil", String.valueOf(T0.plusMinutes(30).toInstant().toEpochMilli())));
-        redisTemplate.opsForZSet().remove(waitingKey(), token);
-        return token;
+        OffsetDateTime runAt = T0.plusMinutes(6);
+
+        QueueAdmissionResult inactiveRun = repository.admit(runAt, admissionPolicy(10, 10, 1));
+
+        assertThat(inactiveRun.admittedCount()).isZero();
+        assertThat(admissionSchedules()).doesNotContain(String.valueOf(SCHEDULE_ID));
+
+        repository.recordPoll(SCHEDULE_ID, entered.token().token(), MEMBER_ID, runAt);
+        assertThat(admissionSchedules()).contains(String.valueOf(SCHEDULE_ID));
+
+        assertThat(repository.admit(runAt, admissionPolicy(10, 10, 1)).admittedCount())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void 회차별과_global_capacity를_동시에_넘지_않는다() {
+        enterMembers(1L, 100L, 4);
+        enterMembers(2L, 200L, 4);
+
+        repository.admit(T0, admissionPolicy(2, 3, 100));
+
+        assertThat(admittedSize(1L)).isLessThanOrEqualTo(2);
+        assertThat(admittedSize(2L)).isLessThanOrEqualTo(2);
+        assertThat(globalAdmittedSize()).isEqualTo(3);
+    }
+
+    @Test
+    void 동시에_Admission을_실행해도_global_capacity를_넘지_않는다() throws Exception {
+        enterMembers(1L, 100L, 10);
+        enterMembers(2L, 200L, 10);
+        QueueAdmissionPolicy limited = admissionPolicy(4, 5, 5);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<QueueAdmissionResult> first = executor.submit(() -> {
+                start.await();
+                return repository.admit(T0, limited);
+            });
+            Future<QueueAdmissionResult> second = executor.submit(() -> {
+                start.await();
+                return repository.admit(T0, limited);
+            });
+            start.countDown();
+            first.get();
+            second.get();
+        }
+
+        assertThat(globalAdmittedSize()).isEqualTo(5);
+        assertThat(admittedSize(1L)).isLessThanOrEqualTo(4);
+        assertThat(admittedSize(2L)).isLessThanOrEqualTo(4);
+    }
+
+    @Test
+    void execution_lease를_우회해_Function이_동시에_호출되어도_capacity를_넘지_않는다() throws Exception {
+        enterMembers(1L, 100L, 10);
+        enterMembers(2L, 200L, 10);
+        QueueAdmissionPolicy limited = admissionPolicy(4, 5, 5);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<Map<String, String>> first = executor.submit(() -> {
+                start.await();
+                return callAdmissionFunction(limited);
+            });
+            Future<Map<String, String>> second = executor.submit(() -> {
+                start.await();
+                return callAdmissionFunction(limited);
+            });
+            start.countDown();
+            first.get();
+            second.get();
+        }
+
+        assertThat(globalAdmittedSize()).isEqualTo(5);
+        assertThat(admittedSize(1L)).isLessThanOrEqualTo(4);
+        assertThat(admittedSize(2L)).isLessThanOrEqualTo(4);
+    }
+
+    @Test
+    void 실행_lease를_다른_scheduler가_보유하면_Admission을_건너뛴다() {
+        repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        redisTemplate.opsForValue().set("queue:admission:execution-lease", "other", Duration.ofSeconds(1));
+
+        QueueAdmissionResult result = repository.admit(T0, ADMISSION_POLICY);
+
+        assertThat(result).isEqualTo(QueueAdmissionResult.leaseNotAcquired());
+        assertThat(globalAdmittedSize()).isZero();
+    }
+
+    @Test
+    void 최초_lease가_만료되면_capacity를_반환하고_다음_WAITING을_입장시킨다() {
+        QueueEnterResult first = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        QueueEnterResult second = repository.enterOrResume(SCHEDULE_ID, OTHER_MEMBER_ID, T0);
+        QueueAdmissionPolicy oneSeat = admissionPolicy(1, 1, 1);
+        repository.admit(T0, oneSeat);
+
+        QueueAdmissionResult result = repository.admit(T0.plusMinutes(5), oneSeat);
+
+        assertThat(result.admittedCount()).isEqualTo(1);
+        assertThat(statusOf(first.token().token())).isEqualTo("EXPIRED");
+        assertThat(statusOf(second.token().token())).isEqualTo(QueueStatus.ADMITTED.name());
+        assertThat(globalAdmittedSize()).isEqualTo(1);
+        assertThat(repository.recordPoll(
+                SCHEDULE_ID, first.token().token(), MEMBER_ID, T0.plusMinutes(5)).outcome())
+                .isEqualTo(QueuePollOutcome.EXPIRED);
+    }
+
+    @Test
+    void Admission은_최초_lease와_hard_cap을_각각_저장한다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+
+        repository.admit(T0, ADMISSION_POLICY);
+
+        assertThat(hashField(entered.token().token(), "admittedAt"))
+                .isEqualTo(String.valueOf(T0.toInstant().toEpochMilli()));
+        assertThat(hashField(entered.token().token(), "admittedUntil"))
+                .isEqualTo(String.valueOf(T0.plusMinutes(5).toInstant().toEpochMilli()));
+        assertThat(hashField(entered.token().token(), "admissionHardExpiresAt"))
+                .isEqualTo(String.valueOf(T0.plusMinutes(30).toInstant().toEpochMilli()));
     }
 
     @Test
@@ -381,6 +580,87 @@ class QueueRedisRepositoryTest extends RedisContainerSupport {
 
     private Set<String> waitingMembers() {
         return redisTemplate.opsForZSet().range(waitingKey(), 0, -1);
+    }
+
+    private Set<String> waitingMembers(long scheduleId) {
+        return redisTemplate.opsForZSet().range(
+                "queue:{%d}:waiting".formatted(scheduleId), 0, -1);
+    }
+
+    private Set<String> admittedMembers(long scheduleId) {
+        return redisTemplate.opsForZSet().range(
+                "queue:{%d}:admitted".formatted(scheduleId), 0, -1);
+    }
+
+    private Set<String> admissionSchedules() {
+        return redisTemplate.opsForZSet().range("queue:admission:schedules", 0, -1);
+    }
+
+    private long admittedSize(long scheduleId) {
+        Long size = redisTemplate.opsForZSet().zCard("queue:{%d}:admitted".formatted(scheduleId));
+        return size == null ? 0 : size;
+    }
+
+    private long globalAdmittedSize() {
+        Long size = redisTemplate.opsForZSet().zCard("queue:admitted");
+        return size == null ? 0 : size;
+    }
+
+    private String statusOf(String token) {
+        return hashField(token, "status");
+    }
+
+    private String statusOf(long scheduleId, String token) {
+        Object value = redisTemplate.opsForHash().get(
+                "queue:{%d}:token:%s".formatted(scheduleId, token), "status");
+        return value == null ? null : value.toString();
+    }
+
+    private List<QueueEnterResult> enterMembers(long scheduleId, long firstMemberId, int count) {
+        List<QueueEnterResult> results = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            results.add(repository.enterOrResume(scheduleId, firstMemberId + index, T0));
+        }
+        return results;
+    }
+
+    private static QueueAdmissionPolicy admissionPolicy(
+            int perScheduleCapacity, int globalCapacity, int maxAdmissionsPerRun) {
+        return admissionPolicy(perScheduleCapacity, globalCapacity, maxAdmissionsPerRun, 1000);
+    }
+
+    private static QueueAdmissionPolicy admissionPolicy(
+            int perScheduleCapacity, int globalCapacity, int maxAdmissionsPerRun,
+            int candidateScanLimit) {
+        return new QueueAdmissionPolicy(
+                perScheduleCapacity,
+                globalCapacity,
+                maxAdmissionsPerRun,
+                candidateScanLimit,
+                Duration.ofMinutes(5),
+                Duration.ofMinutes(5),
+                Duration.ofMinutes(30),
+                Duration.ofSeconds(1));
+    }
+
+    private Map<String, String> callAdmissionFunction(QueueAdmissionPolicy admissionPolicy) {
+        return functions.call(
+                QueueFunctions.ADMIT,
+                List.of(
+                        QueueRedisKeys.admissionSchedules(),
+                        QueueRedisKeys.admissionCursor(),
+                        QueueRedisKeys.admitted()),
+                String.valueOf(T0.toInstant().toEpochMilli()),
+                QueueRedisKeys.root(),
+                String.valueOf(admissionPolicy.waitingActivityWindow().toMillis()),
+                String.valueOf(admissionPolicy.initialLease().toMillis()),
+                String.valueOf(admissionPolicy.hardCap().toMillis()),
+                String.valueOf(admissionPolicy.perScheduleCapacity()),
+                String.valueOf(admissionPolicy.globalCapacity()),
+                String.valueOf(admissionPolicy.maxAdmissionsPerRun()),
+                String.valueOf(admissionPolicy.candidateScanLimit()),
+                "200",
+                "1000");
     }
 
     private long physicalExpireAt(String key) {

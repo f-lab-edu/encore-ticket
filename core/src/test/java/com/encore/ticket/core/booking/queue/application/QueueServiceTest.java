@@ -125,7 +125,8 @@ class QueueServiceTest {
 
         assertThat(response.status()).isEqualTo(QueueStatus.ADMITTED);
         assertThat(response.position()).isZero();
-        assertThat(response.admittedUntil()).isEqualTo(admittedUntil);
+        assertThat(response.admittedUntil())
+                .isEqualTo(admittedUntil.withOffsetSameInstant(ZoneOffset.ofHours(9)));
         assertThat(response.estimatedWaitSeconds()).isNull();
         assertThat(response.pollAfterSeconds()).isNull();
     }
