@@ -27,6 +27,8 @@ public class QueueFunctions implements InitializingBean {
     static final String ENTER_OR_RESUME = "queue_enter_or_resume";
     static final String RECORD_POLL = "queue_record_poll";
     static final String SWEEP_EXPIRED = "queue_sweep_expired";
+    static final String ADMIT = "queue_admit";
+    static final String RELEASE_ADMISSION_LEASE = "queue_release_admission_lease";
 
     private static final String LIBRARY = "scripts/queue.lua";
 

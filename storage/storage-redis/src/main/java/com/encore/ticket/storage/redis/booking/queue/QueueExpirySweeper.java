@@ -68,7 +68,12 @@ public class QueueExpirySweeper {
         for (int round = 0; round < MAX_BATCHES_PER_SCHEDULE; round++) {
             Map<String, String> reply = functions.call(
                     QueueFunctions.SWEEP_EXPIRED,
-                    List.of(QueueRedisKeys.waiting(scheduleId), QueueRedisKeys.expiry(scheduleId)),
+                    List.of(
+                            QueueRedisKeys.waiting(scheduleId),
+                            QueueRedisKeys.expiry(scheduleId),
+                            QueueRedisKeys.admitted(scheduleId),
+                            QueueRedisKeys.admitted(),
+                            QueueRedisKeys.admissionWaiting(scheduleId)),
                     String.valueOf(nowMillis),
                     QueueRedisKeys.schedule(scheduleId),
                     String.valueOf(BATCH_SIZE));
