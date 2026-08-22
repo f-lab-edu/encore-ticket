@@ -22,6 +22,7 @@ dependencies {
 
     runtimeOnly(projects.storage.storageDb)
     runtimeOnly(projects.storage.storageRedis)
+    testImplementation("org.springframework.boot:spring-boot-starter-data-redis")
 
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-mysql")
