@@ -1,5 +1,6 @@
 package com.encore.ticket.core.booking.queue.port;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -13,6 +14,13 @@ public interface QueueRepository {
     Optional<QueueToken> findByToken(Long scheduleId, String queueToken);
 
     QueuePollResult recordPoll(Long scheduleId, String queueToken, Long memberId, OffsetDateTime now);
+
+    QueueAuthorizationOutcome authorizeAndRenew(
+            Long scheduleId,
+            String queueToken,
+            Long memberId,
+            OffsetDateTime now,
+            Duration renewalWindow);
 
     QueueAdmissionResult admit(OffsetDateTime now, QueueAdmissionPolicy policy);
 }

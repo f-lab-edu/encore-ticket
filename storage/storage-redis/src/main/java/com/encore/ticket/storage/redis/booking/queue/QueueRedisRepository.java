@@ -1,6 +1,7 @@
 package com.encore.ticket.storage.redis.booking.queue;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -17,6 +18,7 @@ import com.encore.ticket.core.booking.queue.domain.QueueAdmissionPolicy;
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
 import com.encore.ticket.core.booking.queue.port.QueueAdmissionResult;
+import com.encore.ticket.core.booking.queue.port.QueueAuthorizationOutcome;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
 import com.encore.ticket.core.booking.queue.port.QueuePollOutcome;
 import com.encore.ticket.core.booking.queue.port.QueuePollResult;
@@ -100,6 +102,29 @@ public class QueueRedisRepository implements QueueRepository {
             return QueuePollResult.of(outcome);
         }
         return QueuePollResult.updated(toToken(scheduleId, reply));
+    }
+
+    @Override
+    public QueueAuthorizationOutcome authorizeAndRenew(
+            Long scheduleId,
+            String queueToken,
+            Long memberId,
+            OffsetDateTime now,
+            Duration renewalWindow) {
+        Map<String, String> reply = functions.call(
+                QueueFunctions.AUTHORIZE_AND_RENEW,
+                List.of(
+                        QueueRedisKeys.token(scheduleId, queueToken),
+                        QueueRedisKeys.admitted(scheduleId),
+                        QueueRedisKeys.admitted(),
+                        QueueRedisKeys.expiry(scheduleId)),
+                String.valueOf((long) millis(now)),
+                queueToken,
+                String.valueOf(memberId),
+                QueueRedisKeys.schedule(scheduleId),
+                String.valueOf(renewalWindow.toMillis()));
+
+        return QueueAuthorizationOutcome.valueOf(required(reply, "outcome"));
     }
 
     @Override
