@@ -11,11 +11,11 @@ import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
 import com.encore.ticket.core.booking.exception.IdempotencyKeyReusedException;
 import com.encore.ticket.core.booking.exception.PaymentInProgressException;
 import com.encore.ticket.core.booking.exception.PurchaseLimitExceededException;
-import com.encore.ticket.core.booking.exception.QueueNotAdmittedException;
 import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
 import com.encore.ticket.core.booking.exception.ReservationCancelledException;
 import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.core.catalog.dto.PageResponse;
+import com.encore.ticket.core.booking.queue.application.QueueAuthorizationService;
 import com.encore.ticket.common.InvalidRequestFieldException;
 
 import jakarta.validation.Valid;
@@ -24,6 +24,7 @@ import jakarta.validation.constraints.Min;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -39,18 +40,23 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/reservations")
 public class ReservationController {
 
+    private final QueueAuthorizationService queueAuthorizationService;
+
+    public ReservationController(QueueAuthorizationService queueAuthorizationService) {
+        this.queueAuthorizationService = queueAuthorizationService;
+    }
+
     @PostMapping("/holds")
     ResponseEntity<SeatHoldResponse> hold(
             @RequestHeader("X-Queue-Token") String queueToken,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @AuthenticationPrincipal Long memberId,
             @Valid @RequestBody SeatHoldRequest request) {
 
         if (!StubSchedules.exists(request.scheduleId())) {
             throw notFound("존재하지 않는 회차입니다: " + request.scheduleId());
         }
-        if (!StubQueue.admitted(queueToken)) {
-            throw new QueueNotAdmittedException();
-        }
+        queueAuthorizationService.authorize(request.scheduleId(), memberId, queueToken);
         if (StubReservations.REUSED_IDEMPOTENCY_KEY.equals(idempotencyKey)) {
             throw new IdempotencyKeyReusedException();
         }
