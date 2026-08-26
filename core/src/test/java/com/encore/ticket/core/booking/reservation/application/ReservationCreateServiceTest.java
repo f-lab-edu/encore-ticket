@@ -33,7 +33,6 @@ import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
-import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationCreateServiceTest {
@@ -55,7 +54,6 @@ class ReservationCreateServiceTest {
     private static final String CONCERT_TITLE = "2026 아이유 콘서트";
 
     @Mock ReservationRepository reservationRepository;
-    @Mock SeatAssignmentRepository seatAssignmentRepository;
     @Mock HoldReader holdReader;
     @Mock SeatCatalogReader seatCatalogReader;
     @Mock ScheduleCatalogReader scheduleCatalogReader;
@@ -65,7 +63,7 @@ class ReservationCreateServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReservationCreateService(
-                reservationRepository, seatAssignmentRepository, holdReader,
+                reservationRepository, holdReader,
                 seatCatalogReader, scheduleCatalogReader, CLOCK);
     }
 
@@ -107,13 +105,13 @@ class ReservationCreateServiceTest {
         given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
-        given(reservationRepository.save(any()))
+        given(reservationRepository.saveIssued(any()))
                 .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE));
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
 
         ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
-        verify(reservationRepository).save(captor.capture());
+        verify(reservationRepository).saveIssued(captor.capture());
         Reservation created = captor.getValue();
 
         assertThat(created.status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
@@ -135,13 +133,13 @@ class ReservationCreateServiceTest {
         given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
-        given(reservationRepository.save(any()))
+        given(reservationRepository.saveIssued(any()))
                 .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE));
 
         service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
 
         ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
-        verify(reservationRepository).save(captor.capture());
+        verify(reservationRepository).saveIssued(captor.capture());
         Reservation created = captor.getValue();
 
         assertThat(created.expiresAt()).isEqualTo(PAYMENT_DEADLINE);
@@ -154,7 +152,7 @@ class ReservationCreateServiceTest {
         given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(vipSeats());
-        given(reservationRepository.save(any()))
+        given(reservationRepository.saveIssued(any()))
                 .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT));
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
@@ -167,7 +165,7 @@ class ReservationCreateServiceTest {
         given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
         givenCatalog(List.of(new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", SEAT_PRICE)));
-        given(reservationRepository.save(any()))
+        given(reservationRepository.saveIssued(any()))
                 .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT));
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
@@ -182,7 +180,7 @@ class ReservationCreateServiceTest {
         assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
                 .isInstanceOf(HoldNotOwnedException.class);
 
-        verify(reservationRepository, never()).save(any());
+        verify(reservationRepository, never()).saveIssued(any());
     }
 
     @Test
@@ -194,7 +192,7 @@ class ReservationCreateServiceTest {
         assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
                 .isInstanceOf(HoldExpiredException.class);
 
-        verify(reservationRepository, never()).save(any());
+        verify(reservationRepository, never()).saveIssued(any());
     }
 
     @Test

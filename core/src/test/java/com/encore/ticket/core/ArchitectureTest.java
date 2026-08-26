@@ -43,5 +43,6 @@ class ArchitectureTest {
                             "org.springframework.web..",
                             "jakarta.servlet..",
                             "jakarta.persistence..",
-                            "org.springframework.data..");
+                            "org.springframework.data..",
+                            "org.springframework.transaction..");
 }

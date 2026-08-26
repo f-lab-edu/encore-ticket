@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"python3 - <<'PY'\\nimport io,sys\\ndef edit(path, pairs):\\n    s = io.open(path, encoding='utf-8').read()\\n    for old, new in pairs:\\n        if old not in s:\\n            sys.exit(\\\"NOT FO...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<stdin>\", line 13, in <module>\n  File \"<stdin>\", line 3, in edit\nFileNotFoundError: [Errno 2] No such file or directory: 'storage/storage-db/src/main/java/com/encore/ticket/storage/db/booking/reservation/ReservationMapper.java'",
+  "timestamp": "2026-08-20T13:49:48.064Z",
+  "retry_count": 1
+}

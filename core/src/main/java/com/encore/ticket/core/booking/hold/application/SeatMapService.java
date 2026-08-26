@@ -2,7 +2,7 @@ package com.encore.ticket.core.booking.hold.application;
 
 import com.encore.ticket.core.booking.dto.SeatMapResponse;
 import com.encore.ticket.core.booking.dto.SeatStatus;
-import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
 import com.encore.ticket.core.catalog.domain.SeatInfo;
 
@@ -22,14 +22,14 @@ import lombok.RequiredArgsConstructor;
 public class SeatMapService {
 
     private final SeatHoldRepository seatHoldRepository;
-    private final SeatAssignmentRepository seatAssignmentRepository;
+    private final SeatAssignmentReader seatAssignmentReader;
     private final SeatCatalogReader  seatCatalogReader;
     private final Clock clock;
 
     public SeatMapResponse seatMap(Long scheduleId) {
         List<SeatInfo> seats = seatCatalogReader.seatsOf(scheduleId);
         Map<Long, OffsetDateTime> holdExpiry = seatHoldRepository.holdExpiryBySeatId(scheduleId);
-        Set<Long> assigned = seatAssignmentRepository.assignedSeatIdsOf(scheduleId);
+        Set<Long> assigned = seatAssignmentReader.assignedSeatIdsOf(scheduleId);
         OffsetDateTime now = OffsetDateTime.now(clock);
 
         List<SeatMapResponse.Seat> result = seats.stream()

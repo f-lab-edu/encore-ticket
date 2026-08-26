@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
-import com.encore.ticket.core.booking.seat.port.SeatAssignmentRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
@@ -37,14 +36,11 @@ class ReservationServiceTest {
     @Mock
     ReservationRepository reservationRepository;
 
-    @Mock
-    SeatAssignmentRepository seatAssignmentRepository;
-
     ReservationService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReservationService(reservationRepository, seatAssignmentRepository, CLOCK);
+        service = new ReservationService(reservationRepository, CLOCK);
     }
 
     @Test
@@ -56,6 +52,8 @@ class ReservationServiceTest {
                 .status(ReservationStatus.CONFIRMED)
                 .build();
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
+        given(reservationRepository.saveCancelled(any())).willAnswer(call -> call.getArgument(0));
+
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
         assertThat(result.alreadyCancelled()).isFalse();
@@ -63,7 +61,7 @@ class ReservationServiceTest {
         assertThat(result.response().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
 
         ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
-        verify(reservationRepository).save(captor.capture());
+        verify(reservationRepository).saveCancelled(captor.capture());
         assertThat(captor.getValue().id()).isEqualTo(RESERVATION_ID);
         assertThat(captor.getValue().status()).isEqualTo(ReservationStatus.CANCELLED);
         assertThat(captor.getValue().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
@@ -83,7 +81,7 @@ class ReservationServiceTest {
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, OTHER_MEMBER_ID))
                 .isInstanceOf(ReservationNotOwnedException.class);
 
-        verify(reservationRepository, never()).save(reservation);
+        verify(reservationRepository, never()).saveCancelled(any());
     }
 
     @Test
@@ -96,12 +94,13 @@ class ReservationServiceTest {
                 .cancelledAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
                 .build();
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
+
         CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
 
         assertThat(result.alreadyCancelled()).isTrue();
         assertThat(result.response()).isNull();
 
-        verify(reservationRepository, never()).save(any());
+        verify(reservationRepository, never()).saveCancelled(any());
     }
 
     @Test
@@ -117,7 +116,7 @@ class ReservationServiceTest {
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
                 .isInstanceOf(CancellationClosedException.class);
 
-        verify(reservationRepository, never()).save(reservation);
+        verify(reservationRepository, never()).saveCancelled(any());
     }
 
     @Test
@@ -134,6 +133,6 @@ class ReservationServiceTest {
         assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
                 .isInstanceOf(PaymentInProgressException.class);
 
-        verify(reservationRepository, never()).save(reservation);
+        verify(reservationRepository, never()).saveCancelled(any());
     }
 }
