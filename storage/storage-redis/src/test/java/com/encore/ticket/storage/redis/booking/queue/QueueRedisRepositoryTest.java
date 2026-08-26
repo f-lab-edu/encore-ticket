@@ -23,6 +23,7 @@ import com.encore.ticket.core.booking.queue.domain.QueueAdmissionPolicy;
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 import com.encore.ticket.core.booking.queue.domain.QueueToken;
 import com.encore.ticket.core.booking.queue.port.QueueAdmissionResult;
+import com.encore.ticket.core.booking.queue.port.QueueAuthorizationOutcome;
 import com.encore.ticket.core.booking.queue.port.QueueEnterResult;
 import com.encore.ticket.core.booking.queue.port.QueuePollOutcome;
 import com.encore.ticket.core.booking.queue.port.QueuePollResult;
@@ -365,6 +366,85 @@ class QueueRedisRepositoryTest extends RedisContainerSupport {
     }
 
     @Test
+    void 유효한_좌석_접근은_lease와_모든_index를_함께_갱신한다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        repository.admit(T0, ADMISSION_POLICY);
+        OffsetDateTime authorizedAt = T0.plusMinutes(4);
+
+        QueueAuthorizationOutcome outcome = repository.authorizeAndRenew(
+                SCHEDULE_ID,
+                entered.token().token(),
+                MEMBER_ID,
+                authorizedAt,
+                Duration.ofMinutes(5));
+
+        long renewedUntil = authorizedAt.plusMinutes(5).toInstant().toEpochMilli();
+        assertThat(outcome).isEqualTo(QueueAuthorizationOutcome.AUTHORIZED);
+        assertThat(hashField(entered.token().token(), "admittedUntil"))
+                .isEqualTo(String.valueOf(renewedUntil));
+        assertThat(score("queue:{1}:admitted", entered.token().token()))
+                .isEqualTo(renewedUntil);
+        assertThat(score("queue:admitted", "queue:{1}|" + entered.token().token()))
+                .isEqualTo(renewedUntil);
+        assertThat(score("queue:{1}:expiry", entered.token().token()))
+                .isEqualTo(renewedUntil);
+    }
+
+    @Test
+    void 최초_lease가_이미_만료되면_갱신하지_않고_capacity를_반환한다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        repository.admit(T0, ADMISSION_POLICY);
+
+        QueueAuthorizationOutcome outcome = repository.authorizeAndRenew(
+                SCHEDULE_ID,
+                entered.token().token(),
+                MEMBER_ID,
+                T0.plusMinutes(28),
+                Duration.ofMinutes(5));
+
+        long hardCap = T0.plusMinutes(30).toInstant().toEpochMilli();
+        assertThat(outcome).isEqualTo(QueueAuthorizationOutcome.EXPIRED);
+        assertThat(hashField(entered.token().token(), "status")).isEqualTo("EXPIRED");
+        assertThat(admittedSize(SCHEDULE_ID)).isZero();
+        assertThat(globalAdmittedSize()).isZero();
+    }
+
+    @Test
+    void 갱신된_lease가_살아_있는_동안_다시_갱신하면_hard_cap까지만_연장한다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+        repository.admit(T0, ADMISSION_POLICY);
+        repository.authorizeAndRenew(
+                SCHEDULE_ID, entered.token().token(), MEMBER_ID,
+                T0.plusMinutes(4), Duration.ofMinutes(30));
+
+        QueueAuthorizationOutcome outcome = repository.authorizeAndRenew(
+                SCHEDULE_ID, entered.token().token(), MEMBER_ID,
+                T0.plusMinutes(29), Duration.ofMinutes(5));
+
+        long hardCap = T0.plusMinutes(30).toInstant().toEpochMilli();
+        assertThat(outcome).isEqualTo(QueueAuthorizationOutcome.AUTHORIZED);
+        assertThat(hashField(entered.token().token(), "admittedUntil"))
+                .isEqualTo(String.valueOf(hardCap));
+        assertThat(score("queue:{1}:expiry", entered.token().token())).isEqualTo(hardCap);
+    }
+
+    @Test
+    void WAITING_토큰과_다른_회원의_토큰은_lease를_갱신하지_않는다() {
+        QueueEnterResult entered = repository.enterOrResume(SCHEDULE_ID, MEMBER_ID, T0);
+
+        QueueAuthorizationOutcome waiting = repository.authorizeAndRenew(
+                SCHEDULE_ID, entered.token().token(), MEMBER_ID,
+                T0.plusMinutes(1), Duration.ofMinutes(5));
+        QueueAuthorizationOutcome notOwned = repository.authorizeAndRenew(
+                SCHEDULE_ID, entered.token().token(), OTHER_MEMBER_ID,
+                T0.plusMinutes(1), Duration.ofMinutes(5));
+
+        assertThat(waiting).isEqualTo(QueueAuthorizationOutcome.NOT_ADMITTED);
+        assertThat(notOwned).isEqualTo(QueueAuthorizationOutcome.NOT_OWNED);
+        assertThat(hashField(entered.token().token(), "admittedUntil")).isNull();
+    }
+
+    @Test
     void 최근에_polling한_WAITING만_FIFO로_입장시킨다() {
         QueueEnterResult inactive = repository.enterOrResume(SCHEDULE_ID, 100L, T0);
         QueueEnterResult firstActive = repository.enterOrResume(SCHEDULE_ID, 200L, T0);
@@ -672,5 +752,11 @@ class QueueRedisRepositoryTest extends RedisContainerSupport {
     private String hashField(String token, String field) {
         Object value = redisTemplate.opsForHash().get(tokenKey(token), field);
         return value == null ? null : value.toString();
+    }
+
+    private long score(String key, String member) {
+        Double score = redisTemplate.opsForZSet().score(key, member);
+        assertThat(score).isNotNull();
+        return score.longValue();
     }
 }

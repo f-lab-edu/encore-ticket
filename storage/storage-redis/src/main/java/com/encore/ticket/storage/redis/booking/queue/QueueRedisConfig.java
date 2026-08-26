@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.encore.ticket.core.booking.queue.domain.QueueAdmissionPolicy;
+import com.encore.ticket.core.booking.queue.domain.QueueAuthorizationPolicy;
 import com.encore.ticket.core.booking.queue.domain.QueuePolicy;
 
 @Configuration
@@ -15,6 +16,12 @@ public class QueueRedisConfig {
     @Bean
     public QueuePolicy queuePolicy() {
         return QueuePolicy.DEFAULT;
+    }
+
+    @Bean
+    public QueueAuthorizationPolicy queueAuthorizationPolicy(
+            @Value("${ticket.queue.authorization.renewal-window:5m}") Duration renewalWindow) {
+        return new QueueAuthorizationPolicy(renewalWindow);
     }
 
     @Bean

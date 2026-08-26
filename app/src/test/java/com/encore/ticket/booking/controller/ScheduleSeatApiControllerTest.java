@@ -90,7 +90,7 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         long otherSeatId = RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID + 1))
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID + 1)
                 .then()
@@ -105,7 +105,7 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.WAITING_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_waiting")
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
                 .then()
@@ -122,13 +122,62 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.UNKNOWN_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_unknown")
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
                 .then()
                     .statusCode(403)
                     .contentType(PROBLEM_JSON)
                     .body("code", equalTo("QUEUE_NOT_ADMITTED"));
+    }
+
+    @Test
+    void 다른_회차의_유효한_토큰으로_조회하면_거절하고_lease를_갱신하지_않는다() {
+        long tokenScheduleId = StubSchedules.OPEN_SCHEDULE_ID;
+        long requestedScheduleId = tokenScheduleId + 1;
+        String queueToken = admittedQueueToken(tokenScheduleId);
+        long admittedUntilBefore = admittedUntil(tokenScheduleId, queueToken);
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, queueToken)
+                .when()
+                    .get("/schedules/{scheduleId}/seats", requestedScheduleId)
+                .then()
+                    .statusCode(403)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("QUEUE_NOT_ADMITTED"));
+
+        assertThat(admittedUntil(tokenScheduleId, queueToken)).isEqualTo(admittedUntilBefore);
+    }
+
+    @Test
+    void 다른_회원의_토큰으로_조회하면_403과_QUEUE_TOKEN_NOT_OWNED를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID, 2L))
+                .when()
+                    .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
+                .then()
+                    .statusCode(403)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("QUEUE_TOKEN_NOT_OWNED"));
+    }
+
+    @Test
+    void 만료된_토큰으로_조회하면_410과_QUEUE_TOKEN_EXPIRED를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, expiredQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
+                .when()
+                    .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
+                .then()
+                    .statusCode(410)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("QUEUE_TOKEN_EXPIRED"));
     }
 
     @Test
@@ -149,7 +198,7 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_not_checked")
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.MISSING_SCHEDULE_ID)
                 .then()
@@ -163,7 +212,7 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
     void 좌석_조회는_인증이_필요하다() {
         RestAssured
                 .given().spec(spec)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_not_checked")
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
                 .then()
@@ -176,12 +225,18 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         return RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
                 .then()
                     .statusCode(200)
                     .contentType(ContentType.JSON)
                 .extract().jsonPath();
+    }
+
+    private long admittedUntil(long scheduleId, String queueToken) {
+        Object value = redisTemplate.opsForHash().get(
+                "queue:{%d}:token:%s".formatted(scheduleId, queueToken), "admittedUntil");
+        return Long.parseLong(String.valueOf(value));
     }
 }

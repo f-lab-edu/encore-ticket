@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.emptyString;
@@ -86,7 +87,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
         JsonPath seatMap = RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
                 .when()
                     .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
                 .then()
@@ -146,11 +147,33 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
+    void Queue_authorization_뒤_좌석_선점이_실패해도_lease는_갱신된다() {
+        long scheduleId = StubSchedules.OPEN_SCHEDULE_ID;
+        String queueToken = admittedQueueToken(
+                scheduleId, 1L, OffsetDateTime.now(clock).minusMinutes(1));
+        long before = admittedUntil(scheduleId, queueToken);
+
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, queueToken)
+                    .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
+                    .body(holdBody(List.of(HELD_SEAT_ID)))
+                .when()
+                    .post("/reservations/holds")
+                .then()
+                    .statusCode(409)
+                    .body("code", equalTo("SEAT_ALREADY_HELD"));
+
+        assertThat(admittedUntil(scheduleId, queueToken)).isGreaterThan(before);
+    }
+
+    @Test
     void 누적_좌석_한도를_넘으면_409와_PURCHASE_LIMIT_EXCEEDED를_반환한다() {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubReservations.PURCHASE_LIMIT_SCHEDULE_ID))
                     .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
                     .body(Map.of(
                             "scheduleId", StubReservations.PURCHASE_LIMIT_SCHEDULE_ID,
@@ -259,7 +282,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.WAITING_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_waiting")
                     .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
                     .body(holdBody(List.of(AVAILABLE_SEAT_ID)))
                 .when()
@@ -275,7 +298,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_not_checked")
                     .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
                     .body(Map.of(
                             "scheduleId", StubSchedules.MISSING_SCHEDULE_ID,
@@ -297,7 +320,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
                     .body(holdBody(List.of(AVAILABLE_SEAT_ID)));
 
         if (!QUEUE_TOKEN_HEADER.equals(omittedHeader)) {
-            request.header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN);
+            request.header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID));
         }
         if (!IDEMPOTENCY_KEY_HEADER.equals(omittedHeader)) {
             request.header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY);
@@ -316,7 +339,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     void 선점은_인증이_필요하다() {
         RestAssured
                 .given().spec(spec)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_not_checked")
                     .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
                     .body(holdBody(List.of(AVAILABLE_SEAT_ID)))
                 .when()
@@ -358,7 +381,7 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
                     .header(IDEMPOTENCY_KEY_HEADER, StubReservations.NEW_IDEMPOTENCY_KEY)
                     .body(body)
                 .when()
@@ -804,11 +827,17 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
         return RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, StubQueue.ADMITTED_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
                     .header(IDEMPOTENCY_KEY_HEADER, idempotencyKey)
                     .body(holdBody(seatIds))
                 .when()
                     .post("/reservations/holds");
+    }
+
+    private long admittedUntil(long scheduleId, String queueToken) {
+        Object value = redisTemplate.opsForHash().get(
+                "queue:{%d}:token:%s".formatted(scheduleId, queueToken), "admittedUntil");
+        return Long.parseLong(String.valueOf(value));
     }
 
     private io.restassured.response.Response createRequest(String holdId) {

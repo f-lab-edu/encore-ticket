@@ -284,6 +284,54 @@ local function record_poll(keys, args)
         'outcome', 'UPDATED')
 end
 
+local function authorize_and_renew(keys, args)
+    local tokenKey = keys[1]
+    local admittedKey = keys[2]
+    local globalAdmittedKey = keys[3]
+    local expiryKey = keys[4]
+
+    local nowMillis = tonumber(args[1])
+    local queueToken = args[2]
+    local memberId = args[3]
+    local keyPrefix = args[4]
+    local renewalWindowMillis = tonumber(args[5])
+
+    local fields = redis.call('HMGET', tokenKey,
+        'memberId', 'status', 'admittedUntil', 'admissionHardExpiresAt')
+
+    if not fields[1] then
+        return { 'outcome', 'NOT_FOUND' }
+    end
+    if fields[1] ~= memberId then
+        return { 'outcome', 'NOT_OWNED' }
+    end
+    if fields[2] == 'EXPIRED' then
+        return { 'outcome', 'EXPIRED' }
+    end
+    if fields[2] ~= 'ADMITTED' then
+        return { 'outcome', 'NOT_ADMITTED' }
+    end
+
+    local admittedUntil = tonumber(fields[3])
+    local admissionHardExpiresAt = tonumber(fields[4])
+    if not admittedUntil or not admissionHardExpiresAt
+            or admittedUntil <= nowMillis or admissionHardExpiresAt <= nowMillis then
+        expireAdmitted(keyPrefix, expiryKey, admittedKey, globalAdmittedKey, queueToken)
+        return { 'outcome', 'EXPIRED' }
+    end
+
+    local renewedUntil = math.min(nowMillis + renewalWindowMillis, admissionHardExpiresAt)
+    redis.call('HSET', tokenKey, 'admittedUntil', renewedUntil)
+    redis.call('ZADD', admittedKey, renewedUntil, queueToken)
+    redis.call('ZADD', globalAdmittedKey, renewedUntil, globalMember(keyPrefix, queueToken))
+    redis.call('ZADD', expiryKey, renewedUntil, queueToken)
+
+    return {
+        'outcome', 'AUTHORIZED',
+        'renewedUntil', int(renewedUntil)
+    }
+end
+
 local function nextEligible(keyPrefix, admissionWaitingKey, cutoff, scanLimit)
     local candidates = redis.call('ZRANGE', admissionWaitingKey, 0, scanLimit - 1)
     for index = 1, #candidates do
@@ -452,6 +500,7 @@ end
 
 redis.register_function('queue_enter_or_resume', enter_or_resume)
 redis.register_function('queue_record_poll', record_poll)
+redis.register_function('queue_authorize_and_renew', authorize_and_renew)
 redis.register_function('queue_admit', admit)
 redis.register_function('queue_sweep_expired', sweep_expired)
 redis.register_function('queue_release_admission_lease', release_admission_lease)
