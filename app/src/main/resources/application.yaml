@@ -23,3 +23,16 @@ spring:
     compose:
       start:
         skip: never
+
+ticket:
+  queue:
+    admission:
+      per-schedule-capacity: 100
+      global-capacity: 500
+      max-per-run: 100
+      candidate-scan-limit: 1000
+      scheduler-interval: 1s
+      waiting-activity-window: 5m
+      initial-lease: 5m
+      hard-cap: 30m
+      execution-lease: 900ms

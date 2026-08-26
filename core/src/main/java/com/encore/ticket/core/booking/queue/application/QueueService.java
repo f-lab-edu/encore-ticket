@@ -12,6 +12,8 @@ import com.encore.ticket.core.exception.NotFoundException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,7 @@ public class QueueService {
     private static final int POLL_AFTER_SECONDS = 20;
     private static final int ESTIMATED_WAIT_SECONDS_PER_POSITION = 2;
     private static final int ADMITTED_POSITION = 0;
+    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
     private final QueueRepository queueRepository;
     private final Clock clock;
@@ -50,7 +53,8 @@ public class QueueService {
                 throw new QueueTokenExpiredException();
             }
             return new QueueStatusResponse(
-                    token.status(), ADMITTED_POSITION, null, null, token.admittedUntil());
+                    token.status(), ADMITTED_POSITION, null, null,
+                    token.admittedUntil().withOffsetSameInstant(KST).truncatedTo(ChronoUnit.SECONDS));
         }
 
         return new QueueStatusResponse(
@@ -62,6 +66,11 @@ public class QueueService {
     }
 
     private QueueTokenResponse toResponse(QueueToken token, boolean resumed) {
+        if (token.isAdmitted()) {
+            return new QueueTokenResponse(
+                    token.token(), token.scheduleId(), token.status(), ADMITTED_POSITION,
+                    0, 0, resumed, token.lapsesRemaining());
+        }
         return new QueueTokenResponse(
                 token.token(),
                 token.scheduleId(),
