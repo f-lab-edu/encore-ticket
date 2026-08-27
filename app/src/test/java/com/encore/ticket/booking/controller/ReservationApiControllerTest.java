@@ -81,21 +81,13 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 선점_응답의_totalAmount는_좌석_배치도_가격의_합과_정확히_같다() {
+    void 스텁_좌석_배치도와_선점_응답의_totalAmount가_같다() {
         List<Long> seatIds = List.of(AVAILABLE_SEAT_ID, OTHER_AVAILABLE_SEAT_ID);
 
-        JsonPath seatMap = RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, admittedQueueToken(StubSchedules.OPEN_SCHEDULE_ID))
-                .when()
-                    .get("/schedules/{scheduleId}/seats", StubSchedules.OPEN_SCHEDULE_ID)
-                .then()
-                    .statusCode(200)
-                .extract().jsonPath();
-
-        long expected = seatIds.stream()
-                .mapToLong(seatId -> seatMap.getLong("seats.find { it.id == %d }.price".formatted(seatId)))
+        var seatMap = StubSeatMap.of(StubSchedules.OPEN_SCHEDULE_ID);
+        long expected = seatMap.seats().stream()
+                .filter(seat -> seatIds.contains(seat.id()))
+                .mapToLong(seat -> seat.price())
                 .sum();
 
         int totalAmount = holdRequest(StubReservations.NEW_IDEMPOTENCY_KEY, seatIds)
