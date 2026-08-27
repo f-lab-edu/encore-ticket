@@ -76,8 +76,8 @@ class ReservationQueryServiceTest {
 
     private List<SeatInfo> vipSeats() {
         return List.of(
-                new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", SEAT_PRICE),
-                new SeatInfo(1002L, "A구역", "1열", "2번", "VIP", SEAT_PRICE));
+                new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", SEAT_PRICE),
+                new SeatInfo(1002L, SCHEDULE_ID, "A구역", "1열", "2번", "VIP", SEAT_PRICE));
     }
 
     @Test

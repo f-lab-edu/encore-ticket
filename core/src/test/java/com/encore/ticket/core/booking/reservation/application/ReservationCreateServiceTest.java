@@ -80,8 +80,8 @@ class ReservationCreateServiceTest {
 
     private List<SeatInfo> vipSeats() {
         return List.of(
-                new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", SEAT_PRICE),
-                new SeatInfo(1002L, "A구역", "1열", "2번", "VIP", SEAT_PRICE));
+                new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", SEAT_PRICE),
+                new SeatInfo(1002L, SCHEDULE_ID, "A구역", "1열", "2번", "VIP", SEAT_PRICE));
     }
 
     private Reservation existing(ReservationStatus status, int paymentAttemptNo, OffsetDateTime expiresAt) {
@@ -164,7 +164,7 @@ class ReservationCreateServiceTest {
     void 좌석이_한_장이면_주문명에_나머지_매수를_붙이지_않는다() {
         given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.empty());
-        givenCatalog(List.of(new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", SEAT_PRICE)));
+        givenCatalog(List.of(new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", SEAT_PRICE)));
         given(reservationRepository.saveIssued(any()))
                 .willReturn(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT));
 

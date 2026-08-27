@@ -51,7 +51,7 @@ class SeatMapServiceTest {
     @Test
     void catalog의_좌석_정보에_booking의_상태를_얹어_돌려준다() {
         given(seatCatalogReader.seatsOf(SCHEDULE_ID)).willReturn(List.of(
-                new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", 165_000L)));
+                new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", 165_000L)));
 
         given(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID))
                 .willReturn(Map.of(1001L, OffsetDateTime.parse("2026-08-04T10:05:00Z")));
@@ -74,9 +74,9 @@ class SeatMapServiceTest {
     @Test
     void 예매된_좌석은_RESERVED_선점된_좌석은_HELD_다() {
         given(seatCatalogReader.seatsOf(SCHEDULE_ID)).willReturn(List.of(
-                new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", 165_000L),
-                new SeatInfo(1002L, "A구역", "1열", "2번", "VIP", 165_000L),
-                new SeatInfo(1003L, "A구역", "1열", "3번", "VIP", 165_000L)));
+                new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", 165_000L),
+                new SeatInfo(1002L, SCHEDULE_ID, "A구역", "1열", "2번", "VIP", 165_000L),
+                new SeatInfo(1003L, SCHEDULE_ID, "A구역", "1열", "3번", "VIP", 165_000L)));
 
         given(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID)).willReturn(Map.of(
                 1002L, OffsetDateTime.parse("2026-08-04T10:05:00Z"),
@@ -98,7 +98,7 @@ class SeatMapServiceTest {
     @Test
     void 만료된_선점은_AVAILABLE_로_보인다() {
         given(seatCatalogReader.seatsOf(SCHEDULE_ID)).willReturn(List.of(
-                new SeatInfo(1001L, "A구역", "1열", "1번", "VIP", 165_000L)));
+                new SeatInfo(1001L, SCHEDULE_ID, "A구역", "1열", "1번", "VIP", 165_000L)));
 
         given(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID))
                 .willReturn(Map.of(1001L, OffsetDateTime.parse("2026-08-04T10:00:00Z")));

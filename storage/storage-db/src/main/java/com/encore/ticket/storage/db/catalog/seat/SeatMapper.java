@@ -7,7 +7,7 @@ public final class SeatMapper {
 
     public static SeatInfo toDomain(SeatEntity entity, Long price) {
         return new SeatInfo(
-                entity.id(), entity.section(), entity.row(),
+                entity.id(), entity.scheduleId(), entity.section(), entity.row(),
                 entity.number(), entity.grade(), price);
     }
 }
