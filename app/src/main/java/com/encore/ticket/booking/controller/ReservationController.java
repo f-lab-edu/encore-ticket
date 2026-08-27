@@ -16,7 +16,7 @@ import com.encore.ticket.core.booking.exception.ReservationCancelledException;
 import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.core.catalog.dto.PageResponse;
 import com.encore.ticket.core.booking.queue.application.QueueAuthorizationService;
-import com.encore.ticket.common.InvalidRequestFieldException;
+import com.encore.ticket.core.exception.InvalidRequestFieldException;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;

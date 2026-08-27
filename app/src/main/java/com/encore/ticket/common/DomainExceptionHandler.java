@@ -6,6 +6,7 @@ import com.encore.ticket.core.booking.exception.BookingErrorCode;
 import com.encore.ticket.core.booking.exception.BookingException;
 import com.encore.ticket.core.payment.exception.PaymentErrorCode;
 import com.encore.ticket.core.payment.exception.PaymentException;
+import com.encore.ticket.core.exception.InvalidRequestFieldException;
 import com.encore.ticket.core.exception.NotFoundException;
 
 import org.springframework.http.HttpStatus;
