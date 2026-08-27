@@ -15,18 +15,10 @@ import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
 import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
 import com.encore.ticket.core.booking.dto.ReservationStatus;
 import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
-import com.encore.ticket.core.booking.dto.SeatHoldResponse;
 import com.encore.ticket.core.booking.dto.SeatMapResponse;
-import com.encore.ticket.core.booking.dto.SeatStatus;
 import com.encore.ticket.core.catalog.dto.PageResponse;
 
 final class StubReservations {
-
-    static final String NEW_IDEMPOTENCY_KEY = "idem-new";
-
-    static final String REPLAYED_IDEMPOTENCY_KEY = "idem-replay";
-
-    static final String REUSED_IDEMPOTENCY_KEY = "idem-conflict";
 
     static final String OWN_HOLD_ID = "hold_ok";
 
@@ -39,8 +31,6 @@ final class StubReservations {
     static final String EXPIRED_HOLD_ID = "hold_expired";
 
     static final String MISSING_HOLD_ID = "hold_missing";
-
-    static final long PURCHASE_LIMIT_SCHEDULE_ID = 401L;
 
     static final long PENDING_RESERVATION_ID = 501L;
 
@@ -76,31 +66,6 @@ final class StubReservations {
     private static final Map<Long, StubReservation> RESERVATIONS = createReservations();
 
     private StubReservations() {
-    }
-
-    static boolean seatExists(long seatId) {
-        long scheduleId = seatId / 10;
-        return StubSchedules.exists(scheduleId) && StubSeatMap.seatOf(scheduleId, seatId).isPresent();
-    }
-
-    static boolean seatBelongsTo(long scheduleId, long seatId) {
-        return StubSeatMap.seatOf(scheduleId, seatId).isPresent();
-    }
-
-    static boolean seatTaken(long scheduleId, long seatId) {
-        return StubSeatMap.seatOf(scheduleId, seatId)
-                .map(seat -> seat.status() != SeatStatus.AVAILABLE)
-                .orElse(false);
-    }
-
-    static SeatHoldResponse hold(long scheduleId, List<Long> seatIds) {
-        long totalAmount = seatIds.stream()
-                .map(seatId -> StubSeatMap.seatOf(scheduleId, seatId))
-                .flatMap(Optional::stream)
-                .mapToLong(SeatMapResponse.Seat::price)
-                .sum();
-
-        return new SeatHoldResponse(OWN_HOLD_ID, scheduleId, seatIds, totalAmount, HOLD_EXPIRES_AT);
     }
 
     static boolean holdExists(String holdId) {
