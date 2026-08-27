@@ -22,4 +22,8 @@ final class SeatHoldRedisKeys {
     static String hold(String holdId) {
         return PREFIX + "hold:" + holdId;
     }
+
+    static String idempotency(Long scheduleId, Long memberId, String idempotencyKey) {
+        return PREFIX + "{%d}:idem:%d:%s".formatted(scheduleId, memberId, idempotencyKey);
+    }
 }

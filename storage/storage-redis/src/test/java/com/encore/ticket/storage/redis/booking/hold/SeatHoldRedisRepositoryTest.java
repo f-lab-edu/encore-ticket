@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
+import com.encore.ticket.core.booking.hold.port.SeatHoldAcquisition;
 import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.storage.redis.support.RedisContainerSupport;
 
@@ -33,9 +34,9 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @BeforeEach
     void setUp() {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource("scripts/acquire-seat-hold.lua"));
-        script.setResultType(Long.class);
+        script.setResultType(List.class);
         repository = new SeatHoldRedisRepository(redisTemplate, script, CLOCK);
     }
 
@@ -44,7 +45,7 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
         SeatHold hold = hold(
                 "hold_A", 1L, List.of(11L, 12L), 100L, Duration.ofSeconds(30));
 
-        SeatHoldAcquireResult result = repository.acquire(hold, 4);
+        SeatHoldAcquireResult result = acquire(hold, 4);
 
         assertThat(result).isEqualTo(SeatHoldAcquireResult.ACQUIRED);
         assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L, 12L);
@@ -52,7 +53,7 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @Test
     void 구매_제한과_같은_네_좌석은_선점한다() {
-        SeatHoldAcquireResult result = repository.acquire(
+        SeatHoldAcquireResult result = acquire(
                 hold("hold_A", 1L, List.of(11L, 12L, 13L, 14L), 100L,
                         Duration.ofSeconds(30)), 4);
 
@@ -63,10 +64,10 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @Test
     void 한_좌석이라도_겹치면_새_요청은_하나도_저장하지_않는다() {
-        repository.acquire(
+        acquire(
                 hold("hold_A", 1L, List.of(12L), 100L, Duration.ofSeconds(30)), 4);
 
-        SeatHoldAcquireResult result = repository.acquire(
+        SeatHoldAcquireResult result = acquire(
                 hold("hold_B", 1L, List.of(11L, 12L, 13L), 200L,
                         Duration.ofSeconds(30)), 4);
 
@@ -77,11 +78,11 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @Test
     void 회원의_활성_좌석이_구매_제한을_넘으면_저장하지_않는다() {
-        repository.acquire(
+        acquire(
                 hold("hold_A", 1L, List.of(11L, 12L, 13L), 100L,
                         Duration.ofSeconds(30)), 4);
 
-        SeatHoldAcquireResult result = repository.acquire(
+        SeatHoldAcquireResult result = acquire(
                 hold("hold_B", 1L, List.of(14L, 15L), 100L,
                         Duration.ofSeconds(30)), 4);
 
@@ -94,7 +95,7 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
     void holdId로_선점_정보를_복원한다() {
         SeatHold hold = hold(
                 "hold_A", 1L, List.of(11L, 12L), 100L, Duration.ofSeconds(30));
-        repository.acquire(hold, 4);
+        acquire(hold, 4);
 
         HeldSeats found = repository.findByHoldId("hold_A").orElseThrow();
 
@@ -110,13 +111,13 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             Future<SeatHoldAcquireResult> first = executor.submit(() -> {
                 start.await();
-                return repository.acquire(
+                return acquire(
                         hold("hold_A", 1L, List.of(12L), 100L,
                                 Duration.ofSeconds(30)), 4);
             });
             Future<SeatHoldAcquireResult> second = executor.submit(() -> {
                 start.await();
-                return repository.acquire(
+                return acquire(
                         hold("hold_B", 1L, List.of(12L), 200L,
                                 Duration.ofSeconds(30)), 4);
             });
@@ -132,7 +133,7 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @Test
     void 만료된_선점은_조회되지_않는다() {
-        repository.acquire(
+        acquire(
                 hold("hold_short", 1L, List.of(12L), 100L,
                         Duration.ofMillis(300)), 4);
 
@@ -144,7 +145,7 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
 
     @Test
     void 만료된_좌석은_회원의_구매_제한에서_제외한다() {
-        repository.acquire(
+        acquire(
                 hold("hold_short", 1L, List.of(11L, 12L, 13L, 14L), 100L,
                         Duration.ofMillis(300)), 4);
 
@@ -152,13 +153,66 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
                 .untilAsserted(() -> assertThat(
                         repository.findByHoldId("hold_short")).isEmpty());
 
-        SeatHoldAcquireResult result = repository.acquire(
+        SeatHoldAcquireResult result = acquire(
                 hold("hold_next", 1L, List.of(21L, 22L, 23L, 24L), 100L,
                         Duration.ofSeconds(30)), 4);
 
         assertThat(result).isEqualTo(SeatHoldAcquireResult.ACQUIRED);
         assertThat(repository.holdExpiryBySeatId(1L))
                 .containsOnlyKeys(21L, 22L, 23L, 24L);
+    }
+
+    @Test
+    void 같은_키로_같은_요청이_다시_오면_최초_선점을_그대로_돌려준다() {
+        SeatHold first = hold("hold_A", 1L, List.of(11L, 12L), 100L, Duration.ofSeconds(30));
+        acquire(first, 4, "idem-1");
+
+        SeatHold retried = hold("hold_B", 1L, List.of(11L, 12L), 100L, Duration.ofSeconds(30));
+        SeatHoldAcquisition replayed = acquire(retried, 4, "idem-1");
+
+        assertThat(replayed.result()).isEqualTo(SeatHoldAcquireResult.REPLAYED);
+        assertThat(replayed.holdId()).isEqualTo("hold_A");
+        assertThat(replayed.expiresAt()).isEqualTo(first.expiresAt());
+        assertThat(repository.findByHoldId("hold_B")).isEmpty();
+        assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L, 12L);
+    }
+
+    @Test
+    void 같은_키로_다른_요청이_오면_키_재사용으로_거절한다() {
+        acquire(hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30)), 4, "idem-1");
+
+        SeatHoldAcquisition reused = acquire(
+                hold("hold_B", 1L, List.of(12L), 100L, Duration.ofSeconds(30)), 4, "idem-1");
+
+        assertThat(reused.result()).isEqualTo(SeatHoldAcquireResult.IDEMPOTENCY_KEY_REUSED);
+        assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L);
+        assertThat(repository.findByHoldId("hold_B")).isEmpty();
+    }
+
+    @Test
+    void 멱등성_키는_회원마다_독립이다() {
+        acquire(hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30)), 4, "idem-1");
+
+        SeatHoldAcquisition other = acquire(
+                hold("hold_B", 1L, List.of(12L), 200L, Duration.ofSeconds(30)), 4, "idem-1");
+
+        assertThat(other.result()).isEqualTo(SeatHoldAcquireResult.ACQUIRED);
+        assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L, 12L);
+    }
+
+    private SeatHoldAcquireResult acquire(SeatHold hold, int maxSeats) {
+        return acquire(hold, maxSeats, "idem-" + hold.holdId()).result();
+    }
+
+    private SeatHoldAcquisition acquire(SeatHold hold, int maxSeats, String idempotencyKey) {
+        return repository.acquire(hold, maxSeats, idempotencyKey, fingerprintOf(hold));
+    }
+
+    private static String fingerprintOf(SeatHold hold) {
+        return hold.scheduleId() + ":" + hold.seatIds().stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private SeatHold hold(

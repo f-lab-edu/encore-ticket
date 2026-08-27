@@ -21,6 +21,7 @@ import org.springframework.stereotype.Repository;
 
 import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
+import com.encore.ticket.core.booking.hold.port.SeatHoldAcquisition;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
@@ -31,16 +32,25 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SeatHoldRedisRepository implements SeatHoldRepository, HoldReader {
 
-    private static final long ACQUIRED = 1L;
-    private static final long SEAT_ALREADY_HELD = -1L;
-    private static final long PURCHASE_LIMIT_EXCEEDED = -2L;
+    private static final String ACQUIRED = "1";
+    private static final String REPLAYED = "2";
+    private static final String SEAT_ALREADY_HELD = "-1";
+    private static final String PURCHASE_LIMIT_EXCEEDED = "-2";
+    private static final String IDEMPOTENCY_KEY_REUSED = "-3";
 
     private final StringRedisTemplate redisTemplate;
-    private final RedisScript<Long> acquireSeatHoldScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> acquireSeatHoldScript;
     private final Clock clock;
 
     @Override
-    public SeatHoldAcquireResult acquire(SeatHold seatHold, int maxSeatsPerSchedule) {
+    @SuppressWarnings("unchecked")
+    public SeatHoldAcquisition acquire(
+            SeatHold seatHold,
+            int maxSeatsPerSchedule,
+            String idempotencyKey,
+            String requestFingerprint) {
+
         OffsetDateTime now = OffsetDateTime.now(clock);
         long ttlMillis = Duration.between(now, seatHold.expiresAt()).toMillis();
         if (ttlMillis <= 0) {
@@ -51,6 +61,8 @@ public class SeatHoldRedisRepository implements SeatHoldRepository, HoldReader {
         keys.add(SeatHoldRedisKeys.scheduleSeats(seatHold.scheduleId()));
         keys.add(SeatHoldRedisKeys.memberSeats(seatHold.scheduleId(), seatHold.memberId()));
         keys.add(SeatHoldRedisKeys.hold(seatHold.holdId()));
+        keys.add(SeatHoldRedisKeys.idempotency(
+                seatHold.scheduleId(), seatHold.memberId(), idempotencyKey));
         seatHold.seatIds().stream()
                 .map(seatId -> SeatHoldRedisKeys.seat(seatHold.scheduleId(), seatId))
                 .forEach(keys::add);
@@ -59,7 +71,7 @@ public class SeatHoldRedisRepository implements SeatHoldRepository, HoldReader {
                 .map(String::valueOf)
                 .collect(Collectors.joining(","));
 
-        Long code = redisTemplate.execute(
+        List<String> result = redisTemplate.execute(
                 acquireSeatHoldScript,
                 keys,
                 String.valueOf(now.toInstant().toEpochMilli()),
@@ -70,21 +82,29 @@ public class SeatHoldRedisRepository implements SeatHoldRepository, HoldReader {
                 String.valueOf(seatHold.scheduleId()),
                 String.valueOf(seatHold.memberId()),
                 seatIds,
-                seatHold.expiresAt().toString());
+                seatHold.expiresAt().toString(),
+                requestFingerprint);
 
-        if (code == null) {
+        if (result == null || result.size() != 3) {
             throw new IllegalStateException("Redis 선점 스크립트가 결과를 반환하지 않았습니다.");
         }
-        if (code == ACQUIRED) {
-            return SeatHoldAcquireResult.ACQUIRED;
-        }
-        if (code == SEAT_ALREADY_HELD) {
-            return SeatHoldAcquireResult.SEAT_ALREADY_HELD;
-        }
-        if (code == PURCHASE_LIMIT_EXCEEDED) {
-            return SeatHoldAcquireResult.PURCHASE_LIMIT_EXCEEDED;
-        }
-        throw new IllegalStateException("알 수 없는 Redis 선점 결과입니다: " + code);
+
+        return switch (result.get(0)) {
+            case ACQUIRED -> new SeatHoldAcquisition(
+                    SeatHoldAcquireResult.ACQUIRED, seatHold.holdId(), seatHold.expiresAt());
+            case REPLAYED -> new SeatHoldAcquisition(
+                    SeatHoldAcquireResult.REPLAYED,
+                    result.get(1),
+                    OffsetDateTime.parse(result.get(2)));
+            case SEAT_ALREADY_HELD ->
+                    SeatHoldAcquisition.failed(SeatHoldAcquireResult.SEAT_ALREADY_HELD);
+            case PURCHASE_LIMIT_EXCEEDED ->
+                    SeatHoldAcquisition.failed(SeatHoldAcquireResult.PURCHASE_LIMIT_EXCEEDED);
+            case IDEMPOTENCY_KEY_REUSED ->
+                    SeatHoldAcquisition.failed(SeatHoldAcquireResult.IDEMPOTENCY_KEY_REUSED);
+            default -> throw new IllegalStateException(
+                    "알 수 없는 Redis 선점 결과입니다: " + result.get(0));
+        };
     }
 
     @Override

@@ -273,7 +273,7 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
         SeatHold hold = SeatHold.hold(
                 SCHEDULE_ID, Arrays.stream(seatIds).boxed().toList(), 1L, clock);
 
-        assertThat(seatHoldRepository.acquire(hold, 4)).isEqualTo(SeatHoldAcquireResult.ACQUIRED);
+        assertThat(seatHoldRepository.acquire(hold, 4, "idem-" + hold.holdId(), "fp-" + hold.holdId()).result()).isEqualTo(SeatHoldAcquireResult.ACQUIRED);
     }
 
     private String expiredQueueToken() {
