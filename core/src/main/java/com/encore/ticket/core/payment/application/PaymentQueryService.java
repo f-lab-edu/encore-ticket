@@ -2,6 +2,7 @@ package com.encore.ticket.core.payment.application;
 
 import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
+import com.encore.ticket.core.booking.CompletedPayment;
 import com.encore.ticket.core.payment.port.PaymentRepository;
 
 import java.util.Optional;
@@ -18,5 +19,11 @@ public class PaymentQueryService {
 
     public Optional<PaymentStatus> latestAttemptOf(String holdId) {
         return paymentRepository.findLatestByHoldId(holdId).map(Payment::status);
+    }
+
+    public CompletedPayment completedPaymentOf(Long reservationId) {
+        return paymentRepository.findCompletedByReservationId(reservationId)
+                .map(payment -> new CompletedPayment(payment.paymentKey(), payment.orderId()))
+                .orElse(CompletedPayment.NONE);
     }
 }

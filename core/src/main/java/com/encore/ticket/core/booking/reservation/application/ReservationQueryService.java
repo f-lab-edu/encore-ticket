@@ -12,6 +12,10 @@ import com.encore.ticket.core.catalog.dto.PageResponse;
 
 import java.util.List;
 import java.util.Map;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.function.Supplier;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 
@@ -23,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class ReservationQueryService {
+
+    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
     private final ReservationRepository reservationRepository;
     private final SeatCatalogReader seatCatalogReader;
@@ -41,12 +47,16 @@ public class ReservationQueryService {
         return new PageResponse<>(content, page, size, totalElements, totalPages(totalElements, size));
     }
 
-    public ReservationDetailResponse detail(Long reservationId, Long memberId, CompletedPayment payment) {
+    public ReservationDetailResponse detail(
+            Long reservationId,
+            Long memberId,
+            Supplier<CompletedPayment> completedPayment) {
         Reservation reservation = reservationRepository.getById(reservationId);
         if (!reservation.isOwnedBy(memberId)) {
             throw new ReservationNotOwnedException();
         }
 
+        CompletedPayment payment = completedPayment.get();
         ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(reservation.scheduleId());
         List<SeatInfo> seats = seatCatalogReader.seatsByIds(reservation.seatIds());
 
@@ -56,12 +66,12 @@ public class ReservationQueryService {
                 new ReservationDetailResponse.Concert(
                         schedule.concertId(), schedule.concertTitle(), schedule.posterUrl()),
                 new ReservationDetailResponse.Schedule(
-                        schedule.id(), schedule.startsAt(), schedule.venue()),
+                        schedule.id(), displayed(schedule.startsAt()), schedule.venue()),
                 seats.stream().map(this::toDetailSeat).toList(),
                 reservation.amount(),
                 payment.paymentKey(),
                 payment.orderId(),
-                reservation.reservedAt());
+                displayed(reservation.reservedAt()));
     }
 
     private ReservationSummaryResponse toSummary(Reservation reservation, ScheduleInfo schedule) {
@@ -69,7 +79,7 @@ public class ReservationQueryService {
                 reservation.id(),
                 schedule.concertTitle(),
                 schedule.posterUrl(),
-                schedule.startsAt(),
+                displayed(schedule.startsAt()),
                 schedule.venue(),
                 reservation.seatIds().size(),
                 reservation.amount(),
@@ -83,5 +93,9 @@ public class ReservationQueryService {
 
     private int totalPages(long totalElements, int size) {
         return (int) ((totalElements + size - 1) / size);
+    }
+
+    private static OffsetDateTime displayed(OffsetDateTime dateTime) {
+        return dateTime.withOffsetSameInstant(KST).truncatedTo(ChronoUnit.SECONDS);
     }
 }

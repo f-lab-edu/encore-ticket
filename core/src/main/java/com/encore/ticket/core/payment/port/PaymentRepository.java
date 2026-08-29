@@ -18,5 +18,7 @@ public interface PaymentRepository {
 
     Optional<Payment> findLatestByHoldId(String holdId);
 
+    Optional<Payment> findCompletedByReservationId(Long reservationId);
+
     void save(Payment payment);
 }

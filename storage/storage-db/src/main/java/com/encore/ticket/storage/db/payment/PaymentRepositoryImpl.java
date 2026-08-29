@@ -7,6 +7,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+import com.encore.ticket.core.payment.dto.PaymentStatus;
+
 import lombok.RequiredArgsConstructor;
 
 @Repository
@@ -28,6 +30,12 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     @Override
     public Optional<Payment> findLatestByHoldId(String holdId) {
         return paymentJpa.findFirstByHoldIdOrderByIdDesc(holdId).map(PaymentMapper::toDomain);
+    }
+
+    @Override
+    public Optional<Payment> findCompletedByReservationId(Long reservationId) {
+        return paymentJpa.findFirstByReservationIdAndStatusOrderByIdDesc(reservationId, PaymentStatus.COMPLETED)
+                .map(PaymentMapper::toDomain);
     }
 
     @Override

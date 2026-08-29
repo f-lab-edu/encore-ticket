@@ -43,6 +43,10 @@ class ReservationQueryServiceTest {
     private static final long TOTAL_AMOUNT = 330_000L;
     private static final OffsetDateTime PERFORMANCE_STARTS_AT = OffsetDateTime.parse("2026-09-01T09:00:00Z");
     private static final OffsetDateTime RESERVED_AT = OffsetDateTime.parse("2026-08-04T09:58:00Z");
+    private static final OffsetDateTime DISPLAYED_PERFORMANCE_STARTS_AT =
+            OffsetDateTime.parse("2026-09-01T18:00:00+09:00");
+    private static final OffsetDateTime DISPLAYED_RESERVED_AT =
+            OffsetDateTime.parse("2026-08-04T18:58:00+09:00");
 
     @Mock ReservationRepository reservationRepository;
     @Mock SeatCatalogReader seatCatalogReader;
@@ -99,7 +103,7 @@ class ReservationQueryServiceTest {
         assertThat(card.id()).isEqualTo(RESERVATION_ID);
         assertThat(card.concertTitle()).isEqualTo("2026 아이유 콘서트");
         assertThat(card.posterUrl()).isEqualTo("https://example.com/poster.jpg");
-        assertThat(card.startsAt()).isEqualTo(PERFORMANCE_STARTS_AT);
+        assertThat(card.startsAt()).isEqualTo(DISPLAYED_PERFORMANCE_STARTS_AT);
         assertThat(card.venue()).isEqualTo("KSPO DOME");
         assertThat(card.seatCount()).isEqualTo(2);
         assertThat(card.totalAmount()).isEqualTo(TOTAL_AMOUNT);
@@ -168,7 +172,8 @@ class ReservationQueryServiceTest {
         given(seatCatalogReader.seatsByIds(List.of(1001L, 1002L))).willReturn(vipSeats());
 
         ReservationDetailResponse response = service.detail(
-                RESERVATION_ID, MEMBER_ID, new CompletedPayment("payment-key", "reservation-501-1"));
+                RESERVATION_ID, MEMBER_ID,
+                () -> new CompletedPayment("payment-key", "reservation-501-1"));
 
         assertThat(response.id()).isEqualTo(RESERVATION_ID);
         assertThat(response.status()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -176,10 +181,10 @@ class ReservationQueryServiceTest {
         assertThat(response.concert().title()).isEqualTo("2026 아이유 콘서트");
         assertThat(response.concert().posterUrl()).isEqualTo("https://example.com/poster.jpg");
         assertThat(response.schedule().id()).isEqualTo(SCHEDULE_ID);
-        assertThat(response.schedule().startsAt()).isEqualTo(PERFORMANCE_STARTS_AT);
+        assertThat(response.schedule().startsAt()).isEqualTo(DISPLAYED_PERFORMANCE_STARTS_AT);
         assertThat(response.schedule().venue()).isEqualTo("KSPO DOME");
         assertThat(response.totalAmount()).isEqualTo(TOTAL_AMOUNT);
-        assertThat(response.reservedAt()).isEqualTo(RESERVED_AT);
+        assertThat(response.reservedAt()).isEqualTo(DISPLAYED_RESERVED_AT);
 
         assertThat(response.seats())
                 .extracting(ReservationDetailResponse.Seat::id, ReservationDetailResponse.Seat::number,
@@ -197,7 +202,8 @@ class ReservationQueryServiceTest {
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
 
         ReservationDetailResponse response = service.detail(
-                RESERVATION_ID, MEMBER_ID, new CompletedPayment("payment-key", "reservation-501-1"));
+                RESERVATION_ID, MEMBER_ID,
+                () -> new CompletedPayment("payment-key", "reservation-501-1"));
 
         assertThat(response.paymentKey()).isEqualTo("payment-key");
         assertThat(response.orderId()).isEqualTo("reservation-501-1");
@@ -210,7 +216,8 @@ class ReservationQueryServiceTest {
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
 
-        ReservationDetailResponse response = service.detail(RESERVATION_ID, MEMBER_ID, CompletedPayment.NONE);
+        ReservationDetailResponse response = service.detail(
+                RESERVATION_ID, MEMBER_ID, () -> CompletedPayment.NONE);
 
         assertThat(response.status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
         assertThat(response.paymentKey()).isNull();
@@ -222,7 +229,11 @@ class ReservationQueryServiceTest {
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L), ReservationStatus.CONFIRMED));
 
-        assertThatThrownBy(() -> service.detail(RESERVATION_ID, OTHER_MEMBER_ID, CompletedPayment.NONE))
+        assertThatThrownBy(() -> service.detail(
+                RESERVATION_ID, OTHER_MEMBER_ID,
+                () -> {
+                    throw new AssertionError("소유권 확인 전에 결제를 조회하면 안 됩니다.");
+                }))
                 .isInstanceOf(ReservationNotOwnedException.class);
 
         verify(seatCatalogReader, never()).seatsByIds(any());

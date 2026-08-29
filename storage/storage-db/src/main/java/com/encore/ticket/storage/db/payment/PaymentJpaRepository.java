@@ -20,4 +20,7 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
 
     Optional<PaymentEntity> findFirstByHoldIdOrderByIdDesc(String holdId);
 
+    Optional<PaymentEntity> findFirstByReservationIdAndStatusOrderByIdDesc(
+            Long reservationId, com.encore.ticket.core.payment.dto.PaymentStatus status);
+
 }
