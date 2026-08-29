@@ -2,441 +2,373 @@ package com.encore.ticket.booking.controller;
 
 import com.encore.ticket.ApiSpecTestSupport;
 import com.encore.ticket.core.booking.dto.ReservationStatus;
+import com.encore.ticket.core.booking.reservation.domain.Reservation;
+import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
+import com.encore.ticket.core.payment.domain.Payment;
+import com.encore.ticket.core.payment.dto.PaymentStatus;
+import com.encore.ticket.core.payment.port.PaymentRepository;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.assertj.core.api.SoftAssertions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.jdbc.Sql;
 
-import java.util.Arrays;
-import java.util.Comparator;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
-import java.time.OffsetDateTime;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.Mockito.doAnswer;
 
+@Sql("/sql/reservation-boundary-fixture.sql")
 class ReservationApiControllerTest extends ApiSpecTestSupport {
 
-    private static final List<String> SPEC_SUMMARY_FIELDS = List.of(
-            "id", "concertTitle", "posterUrl", "startsAt", "venue", "seatCount", "totalAmount", "status");
+    private static final long SCHEDULE_ID = 910L;
+    private static final long MEMBER_ID = 1L;
+    private static final long OTHER_MEMBER_ID = 2L;
+    private static final long MISSING_RESERVATION_ID = 999_999L;
 
-    private static final List<String> SPEC_DETAIL_FIELDS = List.of(
+    private static final List<String> SUMMARY_FIELDS = List.of(
+            "id", "concertTitle", "posterUrl", "startsAt", "venue", "seatCount", "totalAmount", "status");
+    private static final List<String> DETAIL_FIELDS = List.of(
             "id", "status", "concert", "schedule", "seats",
             "totalAmount", "paymentKey", "orderId", "reservedAt");
-
-    private static final List<String> SPEC_DETAIL_SEAT_FIELDS =
+    private static final List<String> DETAIL_SEAT_FIELDS =
             List.of("id", "section", "row", "number", "grade", "price");
 
-    private static final List<String> SPEC_CANCEL_FIELDS = List.of("id", "status", "cancelledAt");
+    @MockitoSpyBean
+    private ReservationRepository reservationRepository;
 
-    private static final List<String> SPEC_RESERVATION_STATUS_NAMES =
-            List.of("PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "EXPIRED");
+    @Autowired
+    private PaymentRepository paymentRepository;
+
+    @Autowired
+    private SeatAssignmentReader seatAssignmentReader;
 
     @Test
-    void 예매_생성_요청에_holdId가_없으면_400과_INVALID_REQUEST를_반환한다() {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .body(Map.of())
-                .when()
-                    .post("/reservations")
-                .then()
-                    .statusCode(400)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.field", org.hamcrest.Matchers.hasItem("holdId"));
+    void 예매_목록은_본인의_실제_DB_예매를_ID_역순으로_반환한다() {
+        Reservation oldest = saveReservation(MEMBER_ID, 9001L, ReservationStatus.CONFIRMED);
+        Reservation middle = saveCancelled(MEMBER_ID, 9002L);
+        Reservation newest = saveReservation(MEMBER_ID, 9003L, ReservationStatus.PENDING_PAYMENT);
+        Reservation other = saveReservation(OTHER_MEMBER_ID, 9004L, ReservationStatus.CONFIRMED);
+
+        JsonPath body = reservationPage(0, 10);
+
+        assertThat(body.getList("content.id", Long.class))
+                .containsExactly(newest.id(), middle.id(), oldest.id())
+                .doesNotContain(other.id());
+        assertThat(body.getInt("totalElements")).isEqualTo(3);
+        assertThat(body.getInt("totalPages")).isEqualTo(1);
+        assertThat(body.getMap("content[0]")).containsOnlyKeys(SUMMARY_FIELDS.toArray(String[]::new));
+        assertThat(body.getString("content[0].startsAt")).matches(KST_DATE_TIME_REGEX);
     }
 
     @Test
-    void 취소_요청에_status가_없으면_400과_INVALID_REQUEST를_반환한다() {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .body(Map.of())
-                .when()
-                    .patch("/reservations/{reservationId}", StubReservations.PENDING_RESERVATION_ID)
-                .then()
-                    .statusCode(400)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.field", org.hamcrest.Matchers.hasItem("status"));
-    }
+    void 예매_목록은_실제_건수로_페이지를_나눈다() {
+        Reservation first = saveReservation(MEMBER_ID, 9001L, ReservationStatus.CONFIRMED);
+        Reservation second = saveReservation(MEMBER_ID, 9002L, ReservationStatus.CONFIRMED);
+        Reservation third = saveReservation(MEMBER_ID, 9003L, ReservationStatus.PENDING_PAYMENT);
 
-    @Test
-    void 예매_생성은_인증이_필요하다() {
-        RestAssured
-                .given().spec(spec)
-                    .body(Map.of("holdId", "missing-hold"))
-                .when()
-                    .post("/reservations")
-                .then()
-                    .statusCode(401)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("UNAUTHORIZED"));
-    }
+        JsonPath firstPage = reservationPage(0, 2);
+        JsonPath secondPage = reservationPage(1, 2);
 
-    @Test
-    void 예매_목록은_기본_size_10으로_페이지_응답을_반환한다() {
-        JsonPath body = RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(200)
-                    .contentType(ContentType.JSON)
-                .extract().jsonPath();
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(body.getMap("$"))
-                    .containsOnlyKeys("content", "page", "size", "totalElements", "totalPages");
-            softly.assertThat(body.getInt("page")).isZero();
-            softly.assertThat(body.getInt("size")).isEqualTo(10);
-            softly.assertThat(body.getList("content")).isNotEmpty();
-        });
-    }
-
-    @Test
-    void 예매_목록의_카드는_스펙에_정의된_8개_필드만_가진다() {
-        Map<String, Object> card = RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(200)
-                .extract().jsonPath().getMap("content[0]");
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(card).containsOnlyKeys(SPEC_SUMMARY_FIELDS.toArray(String[]::new));
-            softly.assertThat(SPEC_RESERVATION_STATUS_NAMES).contains(String.valueOf(card.get("status")));
-            softly.assertThat(card.get("seatCount")).isInstanceOf(Integer.class);
-        });
-    }
-
-    @Test
-    void 예매_목록은_다른_사용자의_예매를_포함하지_않는다() {
-        List<Integer> ids = RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .queryParam("size", 100)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(200)
-                .extract().jsonPath().getList("content.id", Integer.class);
-
-        assertThat(ids).doesNotContain((int) StubReservations.OTHER_MEMBER_RESERVATION_ID);
-    }
-
-    @Test
-    void 예매_목록의_페이지는_전체_목록의_해당_구간과_같고_순서가_유지된다() {
-        List<Integer> all = reservationIds(0, 100);
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(all).hasSizeGreaterThanOrEqualTo(3);
-            softly.assertThat(all).isSortedAccordingTo(Comparator.reverseOrder());
-            softly.assertThat(reservationIds(0, 2)).isEqualTo(all.subList(0, 2));
-            softly.assertThat(reservationIds(1, 2)).isEqualTo(all.subList(2, Math.min(4, all.size())));
-        });
-    }
-
-    @Test
-    void 예매_목록의_totalElements와_totalPages는_실제_건수를_반영한다() {
-        JsonPath onePage = reservationPage(0, 100);
-        int total = onePage.getList("content").size();
-
-        JsonPath split = reservationPage(0, 2);
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(onePage.getInt("totalElements")).isEqualTo(total);
-            softly.assertThat(onePage.getInt("totalPages")).isEqualTo(1);
-            softly.assertThat(split.getInt("totalElements")).isEqualTo(total);
-            softly.assertThat(split.getInt("totalPages")).isEqualTo((total + 1) / 2);
-            softly.assertThat(split.getList("content")).hasSize(2);
-        });
+        assertThat(firstPage.getList("content.id", Long.class)).containsExactly(third.id(), second.id());
+        assertThat(secondPage.getList("content.id", Long.class)).containsExactly(first.id());
+        assertThat(firstPage.getInt("totalElements")).isEqualTo(3);
+        assertThat(firstPage.getInt("totalPages")).isEqualTo(2);
     }
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"page=-1", "size=0", "size=abc"})
+    @ValueSource(strings = {"page=-1", "size=0", "size=abc", "size=101"})
     void 예매_목록의_페이지_파라미터가_유효하지_않으면_400을_반환한다(String query) {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations?" + query)
-                .then()
-                    .statusCode(400)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("BAD_REQUEST"));
+        RestAssured.given().spec(spec)
+                .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when().get("/reservations?" + query)
+                .then().statusCode(400).contentType(PROBLEM_JSON).body("code", equalTo("BAD_REQUEST"));
     }
 
     @Test
-    void 예매_목록의_size가_상한을_넘으면_400을_반환한다() {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .queryParam("size", 101)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(400)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("BAD_REQUEST"));
-    }
+    void 완료된_결제의_실제_예매_상세는_콘서트_회차_좌석과_결제_정보를_합쳐_반환한다() {
+        Reservation confirmed = saveReservation(MEMBER_ID, 9001L, ReservationStatus.CONFIRMED);
+        paymentRepository.save(Payment.builder()
+                .paymentKey("payment-key-" + confirmed.id())
+                .orderId(confirmed.currentOrderId())
+                .amount(confirmed.amount())
+                .reservationId(confirmed.id())
+                .memberId(MEMBER_ID)
+                .holdId(confirmed.holdId())
+                .status(PaymentStatus.COMPLETED)
+                .build());
 
-    @Test
-    void 예매_목록은_인증이_필요하다() {
-        RestAssured
-                .given().spec(spec)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(401)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("UNAUTHORIZED"));
-    }
-
-    @Test
-    void 예매_내역은_스펙에_정의된_9개_필드를_반환한다() {
-        Map<String, Object> body = detailOf(StubReservations.CONFIRMED_RESERVATION_ID).getMap("$");
+        JsonPath body = detailOf(confirmed.id());
 
         SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(body).containsOnlyKeys(SPEC_DETAIL_FIELDS.toArray(String[]::new));
-            softly.assertThat(body.get("status")).isEqualTo("CONFIRMED");
-            softly.assertThat(body.get("paymentKey")).isNotNull();
-            softly.assertThat(body.get("orderId")).isNotNull();
-        });
-    }
-
-    @Test
-    void 예매_내역의_중첩_객체는_스펙에_정의된_필드만_가진다() {
-        JsonPath body = detailOf(StubReservations.CONFIRMED_RESERVATION_ID);
-
-        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body.getMap("$")).containsOnlyKeys(DETAIL_FIELDS.toArray(String[]::new));
+            softly.assertThat(body.getString("status")).isEqualTo("CONFIRMED");
+            softly.assertThat(body.getString("paymentKey")).isEqualTo("payment-key-" + confirmed.id());
+            softly.assertThat(body.getString("orderId")).isEqualTo(confirmed.currentOrderId());
             softly.assertThat(body.getMap("concert")).containsOnlyKeys("id", "title", "posterUrl");
             softly.assertThat(body.getMap("schedule")).containsOnlyKeys("id", "startsAt", "venue");
-            softly.assertThat(body.getList("seats")).isNotEmpty();
-            softly.assertThat(body.getMap("seats[0]"))
-                    .containsOnlyKeys(SPEC_DETAIL_SEAT_FIELDS.toArray(String[]::new));
-        });
-    }
-
-    @Test
-    void 예매_내역의_좌석에는_배치도와_달리_status가_없다() {
-        Map<String, Object> seat = detailOf(StubReservations.CONFIRMED_RESERVATION_ID).getMap("seats[0]");
-
-        assertThat(seat).doesNotContainKey("status");
-    }
-
-    @Test
-    void 결제_전_예매_내역의_paymentKey와_orderId는_null이다() {
-        JsonPath body = detailOf(StubReservations.PENDING_RESERVATION_ID);
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(body.getString("status")).isEqualTo("PENDING_PAYMENT");
-            softly.assertThat(body.getString("paymentKey")).isNull();
-            softly.assertThat(body.getString("orderId")).isNull();
-        });
-    }
-
-    @Test
-    void 예매_내역의_시각_필드는_ISO_8601_KST_오프셋_형식이다() {
-        JsonPath body = detailOf(StubReservations.CONFIRMED_RESERVATION_ID);
-
-        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(body.getMap("seats[0]")).containsOnlyKeys(DETAIL_SEAT_FIELDS.toArray(String[]::new));
+            softly.assertThat(body.getMap("seats[0]")).doesNotContainKey("status");
             softly.assertThat(body.getString("reservedAt")).matches(KST_DATE_TIME_REGEX);
             softly.assertThat(body.getString("schedule.startsAt")).matches(KST_DATE_TIME_REGEX);
         });
     }
 
     @Test
-    void 다른_사용자의_예매_내역을_조회하면_403을_반환한다() {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations/{reservationId}", StubReservations.OTHER_MEMBER_RESERVATION_ID)
-                .then()
-                    .statusCode(403)
-                    .contentType(PROBLEM_JSON)
-                    .body("status", equalTo(403))
-                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
+    void 결제_전_예매_상세의_paymentKey와_orderId는_null이다() {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+
+        JsonPath body = detailOf(pending.id());
+
+        assertThat(body.getString("status")).isEqualTo("PENDING_PAYMENT");
+        assertThat(body.getString("paymentKey")).isNull();
+        assertThat(body.getString("orderId")).isNull();
     }
 
     @Test
-    void 없는_예매_내역을_조회하면_404를_반환한다() {
-        RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations/{reservationId}", StubReservations.MISSING_RESERVATION_ID)
-                .then()
-                    .statusCode(404)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("NOT_FOUND"));
+    void 다른_사용자의_예매_상세는_403이고_없는_예매는_404다() {
+        Reservation other = saveReservation(OTHER_MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+
+        RestAssured.given().spec(spec).header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when().get("/reservations/{reservationId}", other.id())
+                .then().statusCode(403).body("code", equalTo("RESERVATION_NOT_OWNED"));
+        RestAssured.given().spec(spec).header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when().get("/reservations/{reservationId}", MISSING_RESERVATION_ID)
+                .then().statusCode(404).body("code", equalTo("NOT_FOUND"));
     }
 
     @Test
-    void 예매_내역_조회는_인증이_필요하다() {
-        RestAssured
-                .given().spec(spec)
-                .when()
-                    .get("/reservations/{reservationId}", StubReservations.CONFIRMED_RESERVATION_ID)
-                .then()
-                    .statusCode(401)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("UNAUTHORIZED"));
+    void PENDING_PAYMENT_예매를_취소하면_상태와_좌석_배정을_함께_변경한다() {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+
+        JsonPath body = cancel(pending.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(200).contentType(ContentType.JSON).extract().jsonPath();
+
+        assertThat(body.getMap("$")).containsOnlyKeys("id", "status", "cancelledAt");
+        assertThat(body.getString("status")).isEqualTo("CANCELLED");
+        assertThat(body.getString("cancelledAt")).matches(KST_DATE_TIME_REGEX);
+        assertThat(reservationRepository.getById(pending.id()).status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).doesNotContain(9001L);
     }
 
     @Test
-    void 예매를_취소하면_200과_스펙에_정의된_3개_필드를_반환한다() {
-        Map<String, Object> body = cancelRequest(
-                StubReservations.PENDING_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(200)
-                    .contentType(ContentType.JSON)
-                .extract().jsonPath().getMap("$");
+    void 만료_시각이_지났지만_아직_PENDING_PAYMENT인_예매는_이번_PR에서_취소한다() {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT,
+                OffsetDateTime.now(clock).minusMinutes(1), null, OffsetDateTime.now(clock).plusDays(1));
 
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(body).containsOnlyKeys(SPEC_CANCEL_FIELDS.toArray(String[]::new));
-            softly.assertThat(body.get("id")).isEqualTo((int) StubReservations.PENDING_RESERVATION_ID);
-            softly.assertThat(body.get("status")).isEqualTo("CANCELLED");
-            softly.assertThat(String.valueOf(body.get("cancelledAt"))).matches(KST_DATE_TIME_REGEX);
-        });
+        cancel(pending.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(200).body("status", equalTo("CANCELLED"));
     }
 
     @Test
-    void 이미_취소된_예매를_다시_취소하면_204와_빈_바디를_반환한다() {
-        String body = cancelRequest(
-                StubReservations.ALREADY_CANCELLED_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(204)
-                .extract().asString();
+    void 이미_취소된_예매를_다시_취소하면_204다() {
+        Reservation cancelled = saveCancelled(MEMBER_ID, 9001L);
 
-        assertThat(body).isEmpty();
+        assertThat(cancel(cancelled.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(204).extract().asString()).isEmpty();
     }
 
     @Test
-    void 취소할_수_없는_예매를_취소하면_409와_CANCELLATION_CLOSED를_반환한다() {
-        cancelRequest(
-                StubReservations.CANCELLATION_CLOSED_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(409)
-                    .contentType(PROBLEM_JSON)
-                    .body("status", equalTo(409))
-                    .body("code", equalTo("CANCELLATION_CLOSED"));
+    void CONFIRMED_예매는_환불_연동_전까지_취소하지_않는다() {
+        Reservation confirmed = saveReservation(MEMBER_ID, 9001L, ReservationStatus.CONFIRMED);
+
+        cancel(confirmed.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(409).body("code", equalTo("CANCELLATION_CLOSED"));
+
+        assertThat(reservationRepository.getById(confirmed.id()).status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).contains(9001L);
     }
 
     @Test
-    void 결제_처리_중인_예매를_취소하면_409와_PAYMENT_IN_PROGRESS를_반환한다() {
-        cancelRequest(
-                StubReservations.PAYMENT_IN_PROGRESS_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(409)
-                    .contentType(PROBLEM_JSON)
-                    .body("status", equalTo(409))
-                    .body("code", equalTo("PAYMENT_IN_PROGRESS"));
+    void 공연이_시작됐거나_결제_처리_중인_예매는_취소하지_않는다() {
+        Reservation closed = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT,
+                OffsetDateTime.now(clock).plusMinutes(10), null, OffsetDateTime.now(clock));
+        Reservation paying = saveReservation(MEMBER_ID, 9002L, ReservationStatus.PENDING_PAYMENT,
+                OffsetDateTime.now(clock).plusMinutes(10), OffsetDateTime.now(clock), OffsetDateTime.now(clock).plusDays(1));
+
+        cancel(closed.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(409).body("code", equalTo("CANCELLATION_CLOSED"));
+        cancel(paying.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(409).body("code", equalTo("PAYMENT_IN_PROGRESS"));
+    }
+
+    @Test
+    void 다른_사용자의_예매는_403이고_없는_예매는_404다() {
+        Reservation other = saveReservation(OTHER_MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+
+        cancel(other.id(), ReservationStatus.CANCELLED.name())
+                .then().statusCode(403).body("code", equalTo("RESERVATION_NOT_OWNED"));
+        cancel(MISSING_RESERVATION_ID, ReservationStatus.CANCELLED.name())
+                .then().statusCode(404).body("code", equalTo("NOT_FOUND"));
     }
 
     @ParameterizedTest(name = "status={0}")
     @ValueSource(strings = {"CONFIRMED", "PENDING_PAYMENT", "EXPIRED"})
-    void 취소_요청의_status가_CANCELLED가_아니면_400을_반환한다(String status) {
-        cancelRequest(StubReservations.PENDING_RESERVATION_ID, status)
-                .then()
-                    .statusCode(400)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("INVALID_REQUEST"))
-                    .body("errors.size()", equalTo(1))
-                    .body("errors[0].field", equalTo("status"))
-                    .body("errors[0].reason", org.hamcrest.Matchers.not(emptyString()));
+    void 취소_요청의_status가_CANCELLED가_아니면_400이다(String status) {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+
+        cancel(pending.id(), status)
+                .then().statusCode(400).contentType(PROBLEM_JSON)
+                .body("code", equalTo("INVALID_REQUEST"))
+                .body("errors[0].field", equalTo("status"))
+                .body("errors[0].reason", org.hamcrest.Matchers.not(emptyString()));
     }
 
     @Test
-    void 다른_사용자의_예매를_취소하면_403을_반환한다() {
-        cancelRequest(StubReservations.OTHER_MEMBER_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(403)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("RESERVATION_NOT_OWNED"));
+    void 동시에_취소하면_한_요청은_200이고_다른_요청은_204로_수렴한다() throws Exception {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+        CountDownLatch bothReadPending = new CountDownLatch(2);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(invocation -> {
+            Object actual = invocation.callRealMethod();
+            if (reads.incrementAndGet() <= 2) {
+                bothReadPending.countDown();
+                assertThat(bothReadPending.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return actual;
+        }).when(reservationRepository).findById(pending.id());
+
+        List<Response> responses = concurrently(() -> cancel(pending.id(), ReservationStatus.CANCELLED.name()));
+
+        assertThat(responses).extracting(Response::statusCode).containsExactlyInAnyOrder(200, 204);
+        assertThat(reservationRepository.getById(pending.id()).status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).doesNotContain(9001L);
     }
 
     @Test
-    void 없는_예매를_취소하면_404를_반환한다() {
-        cancelRequest(StubReservations.MISSING_RESERVATION_ID, ReservationStatus.CANCELLED.name())
-                .then()
-                    .statusCode(404)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("NOT_FOUND"));
+    void 취소_중_재결제_준비로_버전만_바뀌면_최신_상태를_읽고_한번_재시도한다() throws Exception {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
+        CountDownLatch cancellationRead = new CountDownLatch(1);
+        CountDownLatch versionChanged = new CountDownLatch(1);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(invocation -> {
+            Object actual = invocation.callRealMethod();
+            if (reads.incrementAndGet() == 1) {
+                cancellationRead.countDown();
+                assertThat(versionChanged.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return actual;
+        }).when(reservationRepository).findById(pending.id());
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var response = executor.submit(() -> cancel(pending.id(), ReservationStatus.CANCELLED.name()));
+            assertThat(cancellationRead.await(10, TimeUnit.SECONDS)).isTrue();
+            reservationRepository.save(pending.startNextPaymentAttempt());
+            versionChanged.countDown();
+
+            assertThat(response.get(20, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        }
+
+        Reservation cancelled = reservationRepository.getById(pending.id());
+        assertThat(cancelled.status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(cancelled.paymentAttemptNo()).isEqualTo(2);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).doesNotContain(9001L);
     }
 
     @Test
-    void 예매_취소는_인증이_필요하다() {
-        RestAssured
-                .given().spec(spec)
-                    .body(Map.of("status", ReservationStatus.CANCELLED.name()))
-                .when()
-                    .patch("/reservations/{reservationId}", StubReservations.PENDING_RESERVATION_ID)
-                .then()
-                    .statusCode(401)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("UNAUTHORIZED"));
+    void 예매_목록_상세_취소는_인증이_필요하다() {
+        RestAssured.given().spec(spec).when().get("/reservations")
+                .then().statusCode(401).body("code", equalTo("UNAUTHORIZED"));
+        RestAssured.given().spec(spec).when().get("/reservations/{reservationId}", MISSING_RESERVATION_ID)
+                .then().statusCode(401).body("code", equalTo("UNAUTHORIZED"));
+        RestAssured.given().spec(spec).body(Map.of("status", "CANCELLED"))
+                .when().patch("/reservations/{reservationId}", MISSING_RESERVATION_ID)
+                .then().statusCode(401).body("code", equalTo("UNAUTHORIZED"));
     }
 
     @Test
-    void 예매_상태_ENUM은_스펙에_적힌_4개_리터럴과_정확히_일치한다() {
-        List<String> declared = Arrays.stream(ReservationStatus.values()).map(Enum::name).toList();
+    void 취소_요청에_status가_없으면_400이다() {
+        Reservation pending = saveReservation(MEMBER_ID, 9001L, ReservationStatus.PENDING_PAYMENT);
 
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(SPEC_RESERVATION_STATUS_NAMES).hasSize(4);
-            softly.assertThat(declared)
-                    .hasSize(SPEC_RESERVATION_STATUS_NAMES.size())
-                    .containsExactlyInAnyOrderElementsOf(SPEC_RESERVATION_STATUS_NAMES);
-        });
+        RestAssured.given().spec(spec).header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN).body(Map.of())
+                .when().patch("/reservations/{reservationId}", pending.id())
+                .then().statusCode(400).contentType(PROBLEM_JSON)
+                .body("code", equalTo("INVALID_REQUEST"))
+                .body("errors.field", org.hamcrest.Matchers.hasItem("status"));
     }
 
     private JsonPath reservationPage(int page, int size) {
-        return RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .queryParam("page", page)
-                    .queryParam("size", size)
-                .when()
-                    .get("/reservations")
-                .then()
-                    .statusCode(200)
-                .extract().jsonPath();
-    }
-
-    private List<Integer> reservationIds(int page, int size) {
-        return reservationPage(page, size).getList("content.id", Integer.class);
-    }
-
-    private io.restassured.response.Response cancelRequest(long reservationId, String status) {
-        return RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .body(Map.of("status", status))
-                .when()
-                    .patch("/reservations/{reservationId}", reservationId);
+        return RestAssured.given().spec(spec).header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .queryParam("page", page).queryParam("size", size)
+                .when().get("/reservations")
+                .then().statusCode(200).contentType(ContentType.JSON).extract().jsonPath();
     }
 
     private JsonPath detailOf(long reservationId) {
-        return RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .when()
-                    .get("/reservations/{reservationId}", reservationId)
-                .then()
-                    .statusCode(200)
-                    .contentType(ContentType.JSON)
-                .extract().jsonPath();
+        return RestAssured.given().spec(spec).header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .when().get("/reservations/{reservationId}", reservationId)
+                .then().statusCode(200).contentType(ContentType.JSON).extract().jsonPath();
+    }
+
+    private Response cancel(long reservationId, String status) {
+        return RestAssured.given().port(port).contentType(ContentType.JSON)
+                .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                .body(Map.of("status", status))
+                .when().patch("/reservations/{reservationId}", reservationId);
+    }
+
+    private List<Response> concurrently(Callable<Response> call) throws Exception {
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            CountDownLatch start = new CountDownLatch(1);
+            Callable<Response> task = () -> {
+                assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
+                return call.call();
+            };
+            var first = executor.submit(task);
+            var second = executor.submit(task);
+            start.countDown();
+            return List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS));
+        }
+    }
+
+    private Reservation saveCancelled(long memberId, long seatId) {
+        Reservation pending = saveReservation(memberId, seatId, ReservationStatus.PENDING_PAYMENT);
+        return reservationRepository.saveCancelled(pending.cancel(clock));
+    }
+
+    private Reservation saveReservation(long memberId, long seatId, ReservationStatus status) {
+        return saveReservation(memberId, seatId, status,
+                OffsetDateTime.now(clock).plusMinutes(10), null, OffsetDateTime.now(clock).plusDays(1));
+    }
+
+    private Reservation saveReservation(
+            long memberId,
+            long seatId,
+            ReservationStatus status,
+            OffsetDateTime expiresAt,
+            OffsetDateTime paymentStartsAt,
+            OffsetDateTime performanceStartsAt) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        return reservationRepository.saveIssued(Reservation.builder()
+                .holdId("query-cancel-" + System.nanoTime())
+                .memberId(memberId)
+                .scheduleId(SCHEDULE_ID)
+                .seatIds(List.of(seatId))
+                .amount(150_000L)
+                .originalExpiresAt(expiresAt)
+                .expiresAt(expiresAt)
+                .performanceStartsAt(performanceStartsAt)
+                .reservedAt(now)
+                .status(status)
+                .paymentAttemptNo(1)
+                .paymentStartsAt(paymentStartsAt)
+                .build());
     }
 }
