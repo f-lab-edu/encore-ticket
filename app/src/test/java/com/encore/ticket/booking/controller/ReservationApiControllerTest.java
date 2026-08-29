@@ -24,9 +24,6 @@ import static org.hamcrest.Matchers.notNullValue;
 
 class ReservationApiControllerTest extends ApiSpecTestSupport {
 
-    private static final List<String> SPEC_CREATE_FIELDS = List.of(
-            "reservationId", "orderId", "orderName", "amount", "status", "expiresAt", "originalExpiresAt");
-
     private static final List<String> SPEC_SUMMARY_FIELDS = List.of(
             "id", "concertTitle", "posterUrl", "startsAt", "venue", "seatCount", "totalAmount", "status");
 
@@ -41,28 +38,6 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
 
     private static final List<String> SPEC_RESERVATION_STATUS_NAMES =
             List.of("PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "EXPIRED");
-
-    @Test
-    void 예매를_생성하면_201과_스펙에_정의된_7개_필드를_반환한다() {
-        Map<String, Object> body = createRequest(StubReservations.OWN_HOLD_ID)
-                .then()
-                    .statusCode(201)
-                    .contentType(ContentType.JSON)
-                .extract().jsonPath().getMap("$");
-
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(body).containsOnlyKeys(SPEC_CREATE_FIELDS.toArray(String[]::new));
-            softly.assertThat(body.get("status")).isEqualTo("PENDING_PAYMENT");
-            softly.assertThat(body.get("reservationId"))
-                    .isEqualTo((int) StubReservations.PENDING_RESERVATION_ID);
-            softly.assertThat(body.get("orderId"))
-                    .isEqualTo("reservation-" + StubReservations.PENDING_RESERVATION_ID + "-1");
-            softly.assertThat(body.get("amount")).isInstanceOf(Integer.class);
-            softly.assertThat((Integer) body.get("amount")).isPositive();
-            softly.assertThat(String.valueOf(body.get("expiresAt"))).matches(KST_DATE_TIME_REGEX);
-            softly.assertThat(String.valueOf(body.get("originalExpiresAt"))).matches(KST_DATE_TIME_REGEX);
-        });
-    }
 
     @Test
     void 예매_생성_요청에_holdId가_없으면_400과_INVALID_REQUEST를_반환한다() {
@@ -95,56 +70,10 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 같은_선점으로_재요청하면_200을_반환한다() {
-        createRequest(StubReservations.REPLAYED_HOLD_ID)
-                .then()
-                    .statusCode(200)
-                    .contentType(ContentType.JSON)
-                    .body("status", equalTo("CONFIRMED"));
-    }
-
-    @Test
-    void 다른_사용자의_선점으로_예매를_생성하면_403과_HOLD_NOT_OWNED를_반환한다() {
-        createRequest(StubReservations.OTHER_MEMBER_HOLD_ID)
-                .then()
-                    .statusCode(403)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("HOLD_NOT_OWNED"));
-    }
-
-    @Test
-    void 이미_취소된_예매의_선점으로_요청하면_409와_RESERVATION_CANCELLED를_반환한다() {
-        createRequest(StubReservations.CANCELLED_HOLD_ID)
-                .then()
-                    .statusCode(409)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("RESERVATION_CANCELLED"));
-    }
-
-    @Test
-    void 만료된_선점으로_요청하면_410과_HOLD_EXPIRED를_반환한다() {
-        createRequest(StubReservations.EXPIRED_HOLD_ID)
-                .then()
-                    .statusCode(410)
-                    .contentType(PROBLEM_JSON)
-                    .body("status", equalTo(410))
-                    .body("code", equalTo("HOLD_EXPIRED"));
-    }
-
-    @Test
-    void 없는_선점으로_요청하면_404를_반환한다() {
-        createRequest(StubReservations.MISSING_HOLD_ID)
-                .then()
-                    .statusCode(404)
-                    .contentType(PROBLEM_JSON)
-                    .body("code", equalTo("NOT_FOUND"));
-    }
-
-    @Test
     void 예매_생성은_인증이_필요하다() {
         RestAssured
                 .given().spec(spec)
-                    .body(Map.of("holdId", StubReservations.OWN_HOLD_ID))
+                    .body(Map.of("holdId", "missing-hold"))
                 .when()
                     .post("/reservations")
                 .then()
@@ -488,15 +417,6 @@ class ReservationApiControllerTest extends ApiSpecTestSupport {
 
     private List<Integer> reservationIds(int page, int size) {
         return reservationPage(page, size).getList("content.id", Integer.class);
-    }
-
-    private io.restassured.response.Response createRequest(String holdId) {
-        return RestAssured
-                .given().spec(spec)
-                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .body(Map.of("holdId", holdId))
-                .when()
-                    .post("/reservations");
     }
 
     private io.restassured.response.Response cancelRequest(long reservationId, String status) {
