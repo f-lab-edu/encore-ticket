@@ -5,6 +5,8 @@ import com.encore.ticket.core.booking.dto.ReservationStatus;
 import com.encore.ticket.core.booking.exception.HoldExpiredException;
 import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
 import com.encore.ticket.core.booking.exception.ReservationCancelledException;
+import com.encore.ticket.core.booking.exception.ReservationAlreadyExistsException;
+import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.core.catalog.port.ScheduleCatalogReader;
 import com.encore.ticket.core.catalog.domain.ScheduleInfo;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
@@ -29,6 +31,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
@@ -87,6 +91,7 @@ class ReservationCreateServiceTest {
     private Reservation existing(ReservationStatus status, int paymentAttemptNo, OffsetDateTime expiresAt) {
         return Reservation.builder()
                 .id(RESERVATION_ID)
+                .holdId(HOLD_ID)
                 .memberId(MEMBER_ID)
                 .scheduleId(SCHEDULE_ID)
                 .seatIds(SEAT_IDS)
@@ -197,7 +202,6 @@ class ReservationCreateServiceTest {
 
     @Test
     void 결제_시도가_없던_예매로_재요청하면_기존_주문번호를_그대로_돌려준다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.PENDING_PAYMENT, 1, EXTENDED_EXPIRES_AT)));
         givenCatalog(vipSeats());
@@ -209,12 +213,12 @@ class ReservationCreateServiceTest {
         assertThat(result.response().expiresAt()).isEqualTo(EXTENDED_EXPIRES_AT);
         assertThat(result.response().originalExpiresAt()).isEqualTo(PAYMENT_DEADLINE);
 
+        verifyNoInteractions(holdReader);
         verify(reservationRepository, never()).save(any());
     }
 
     @Test
     void 결제가_진행_중이면_새_주문번호를_발급하지_않는다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT)));
         givenCatalog(vipSeats());
@@ -230,8 +234,9 @@ class ReservationCreateServiceTest {
     @Test
     void 직전_결제가_실패했으면_다음_시도번호로_주문번호를_발급한다() {
         Reservation reservation = existing(ReservationStatus.PENDING_PAYMENT, 1, HOLD_EXPIRES_AT);
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.of(reservation));
+        given(reservationRepository.prepareNextPaymentAttempt(HOLD_ID, MEMBER_ID))
+                .willReturn(reservation.startNextPaymentAttempt());
         givenCatalog(vipSeats());
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.FAILED);
@@ -239,16 +244,14 @@ class ReservationCreateServiceTest {
         assertThat(result.created()).isFalse();
         assertThat(result.response().orderId()).isEqualTo("reservation-501-2");
 
-        ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
-        verify(reservationRepository).save(captor.capture());
-        assertThat(captor.getValue().paymentAttemptNo()).isEqualTo(2);
+        verify(reservationRepository).prepareNextPaymentAttempt(HOLD_ID, MEMBER_ID);
+        verify(reservationRepository, never()).save(any());
     }
 
     @Test
     void 확정된_예매로_재요청하면_확정_상태를_그대로_돌려준다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
-                .willReturn(Optional.of(existing(ReservationStatus.CONFIRMED, 1, HOLD_EXPIRES_AT)));
+                .willReturn(Optional.of(existing(ReservationStatus.CONFIRMED, 1, OffsetDateTime.now(CLOCK).minusMinutes(1))));
         givenCatalog(vipSeats());
 
         CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.COMPLETED);
@@ -262,7 +265,6 @@ class ReservationCreateServiceTest {
 
     @Test
     void 취소된_예매의_선점으로_재요청하면_실패한다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.CANCELLED, 1, HOLD_EXPIRES_AT)));
 
@@ -274,7 +276,6 @@ class ReservationCreateServiceTest {
 
     @Test
     void 만료된_예매의_선점으로_재요청하면_실패한다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID))
                 .willReturn(Optional.of(existing(ReservationStatus.EXPIRED, 1, HOLD_EXPIRES_AT)));
 
@@ -286,7 +287,6 @@ class ReservationCreateServiceTest {
 
     @Test
     void 예매_만료_시각에_도달했으면_재요청도_실패한다() {
-        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
         given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.of(existing(
                 ReservationStatus.PENDING_PAYMENT, 1, OffsetDateTime.parse("2026-08-04T10:00:00Z"))));
 
@@ -294,5 +294,85 @@ class ReservationCreateServiceTest {
                 .isInstanceOf(HoldExpiredException.class);
 
         verify(reservationRepository, never()).save(any());
+    }
+
+    @Test
+    void 기존_예매의_소유자가_다르면_Redis를_조회하지_않고_거절한다() {
+        given(reservationRepository.findByHoldId(HOLD_ID))
+                .willReturn(Optional.of(existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE)));
+
+        assertThatThrownBy(() -> service.create(HOLD_ID, OTHER_MEMBER_ID, PaymentAttemptState.FAILED))
+                .isInstanceOf(HoldNotOwnedException.class);
+
+        verifyNoInteractions(holdReader, seatCatalogReader, scheduleCatalogReader);
+        verify(reservationRepository, never()).prepareNextPaymentAttempt(any(), any());
+    }
+
+    @Test
+    void 과거_실패_힌트가_있어도_저장소가_반환한_현재_주문번호를_사용한다() {
+        Reservation current = existing(ReservationStatus.PENDING_PAYMENT, 2, PAYMENT_DEADLINE);
+        given(reservationRepository.findByHoldId(HOLD_ID)).willReturn(Optional.of(current));
+        given(reservationRepository.prepareNextPaymentAttempt(HOLD_ID, MEMBER_ID)).willReturn(current);
+        givenCatalog(vipSeats());
+
+        CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.FAILED);
+
+        assertThat(result.response().orderId()).isEqualTo("reservation-501-2");
+        verify(reservationRepository, never()).save(any());
+    }
+
+    @Test
+    void 같은_선점의_동시_저장_충돌이면_다시_조회한_기존_예매를_반환한다() {
+        Reservation winner = existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE);
+        given(reservationRepository.findByHoldId(HOLD_ID))
+                .willReturn(Optional.empty(), Optional.of(winner));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        givenCatalog(vipSeats());
+        given(reservationRepository.saveIssued(any()))
+                .willThrow(new ReservationAlreadyExistsException(new RuntimeException("duplicate hold")));
+
+        CreateResult result = service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE);
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.response().reservationId()).isEqualTo(RESERVATION_ID);
+        verify(reservationRepository, times(2)).findByHoldId(HOLD_ID);
+    }
+
+    @Test
+    void 충돌_후_재조회한_예매의_소유자도_검증한다() {
+        Reservation other = existing(ReservationStatus.PENDING_PAYMENT, 1, PAYMENT_DEADLINE)
+                .toBuilder().memberId(OTHER_MEMBER_ID).build();
+        given(reservationRepository.findByHoldId(HOLD_ID))
+                .willReturn(Optional.empty(), Optional.of(other));
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        givenCatalog(vipSeats());
+        given(reservationRepository.saveIssued(any()))
+                .willThrow(new ReservationAlreadyExistsException(new RuntimeException("duplicate hold")));
+
+        assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
+                .isInstanceOf(HoldNotOwnedException.class);
+    }
+
+    @Test
+    void 다른_선점의_좌석_충돌을_예매_재응답으로_바꾸지_않는다() {
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        givenCatalog(vipSeats());
+        given(reservationRepository.saveIssued(any())).willThrow(new SeatAlreadyHeldException());
+
+        assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
+                .isInstanceOf(SeatAlreadyHeldException.class);
+        verify(reservationRepository).findByHoldId(HOLD_ID);
+    }
+
+    @Test
+    void 일반_저장_실패를_예매_재응답으로_바꾸지_않는다() {
+        given(holdReader.getByHoldId(HOLD_ID)).willReturn(hold(MEMBER_ID, HOLD_EXPIRES_AT));
+        givenCatalog(vipSeats());
+        RuntimeException failure = new IllegalStateException("storage unavailable");
+        given(reservationRepository.saveIssued(any())).willThrow(failure);
+
+        assertThatThrownBy(() -> service.create(HOLD_ID, MEMBER_ID, PaymentAttemptState.NONE))
+                .isSameAs(failure);
+        verify(reservationRepository).findByHoldId(HOLD_ID);
     }
 }

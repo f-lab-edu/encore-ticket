@@ -1,6 +1,9 @@
 package com.encore.ticket.core.booking.reservation.domain;
 
 import com.encore.ticket.core.booking.dto.ReservationStatus;
+import com.encore.ticket.core.booking.exception.HoldExpiredException;
+import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
+import com.encore.ticket.core.booking.exception.ReservationCancelledException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -59,7 +62,20 @@ public class Reservation {
     }
 
     public boolean isExpired(Clock clock) {
-        return status == ReservationStatus.EXPIRED || !OffsetDateTime.now(clock).isBefore(expiresAt);
+        return status == ReservationStatus.EXPIRED
+                || (isPendingPayment() && !OffsetDateTime.now(clock).isBefore(expiresAt));
+    }
+
+    public void validatePaymentPreparation(Long memberId, Clock clock) {
+        if (!isOwnedBy(memberId)) {
+            throw new HoldNotOwnedException();
+        }
+        if (isCancelled()) {
+            throw new ReservationCancelledException();
+        }
+        if (isExpired(clock)) {
+            throw new HoldExpiredException();
+        }
     }
 
     public boolean isPendingPayment() {
