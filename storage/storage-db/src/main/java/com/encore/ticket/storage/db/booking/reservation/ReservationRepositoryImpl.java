@@ -3,6 +3,7 @@ package com.encore.ticket.storage.db.booking.reservation;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 import com.encore.ticket.core.booking.exception.ReservationAlreadyExistsException;
+import com.encore.ticket.core.booking.exception.ReservationConcurrentModificationException;
 import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.storage.db.booking.seat.SeatAssignmentJpaRepository;
 import com.encore.ticket.storage.db.payment.PaymentJpaRepository;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.hibernate.exception.ConstraintViolationException;
 
 import java.util.List;
@@ -142,7 +144,12 @@ public class ReservationRepositoryImpl implements ReservationRepository {
             throw new IllegalArgumentException("취소 상태가 아닌 예매는 좌석을 해제할 수 없습니다: " + cancelled.id());
         }
 
-        ReservationEntity saved = reservationJpa.saveAndFlush(ReservationMapper.toEntity(cancelled));
+        ReservationEntity saved;
+        try {
+            saved = reservationJpa.saveAndFlush(ReservationMapper.toEntity(cancelled));
+        } catch (OptimisticLockingFailureException exception) {
+            throw new ReservationConcurrentModificationException(exception);
+        }
 
         seatAssignmentJpa.deleteByReservationId(saved.id());
 
