@@ -8,6 +8,7 @@ import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.OffsetDateTime;
 
 interface ReservationJpaRepository extends JpaRepository<ReservationEntity, Long> {
 
@@ -20,4 +21,15 @@ interface ReservationJpaRepository extends JpaRepository<ReservationEntity, Long
     List<ReservationEntity> findByMemberId(Long memberId, Pageable pageable);
 
     long countByMemberId(Long memberId);
+
+    @Query(value = """
+            SELECT *
+            FROM reservation
+            WHERE status = 'PENDING_PAYMENT'
+              AND expires_at <= :now
+            ORDER BY expires_at, id
+            LIMIT :batchSize
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<ReservationEntity> findExpiredForUpdate(OffsetDateTime now, int batchSize);
 }
