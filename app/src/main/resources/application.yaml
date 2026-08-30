@@ -25,6 +25,11 @@ spring:
         skip: never
 
 ticket:
+  reservation:
+    expiry:
+      batch-size: 100
+      scheduler-interval: 1s
+
   queue:
     admission:
       per-schedule-capacity: 100
