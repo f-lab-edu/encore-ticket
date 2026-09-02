@@ -10,11 +10,13 @@ import com.encore.ticket.storage.db.payment.PaymentJpaRepository;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
 import com.encore.ticket.core.exception.NotFoundException;
 import java.time.Clock;
+import java.time.OffsetDateTime;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.hibernate.exception.ConstraintViolationException;
@@ -154,6 +156,24 @@ public class ReservationRepositoryImpl implements ReservationRepository {
         seatAssignmentJpa.deleteByReservationId(saved.id());
 
         return toDomain(saved);
+    }
+
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public int expireBatch(OffsetDateTime now, int batchSize) {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("만료 batch 크기는 1 이상이어야 합니다: " + batchSize);
+        }
+
+        List<ReservationEntity> expired = reservationJpa.findExpiredForUpdate(now, batchSize);
+        for (ReservationEntity entity : expired) {
+            Reservation expiration = ReservationMapper.toDomain(entity, List.of()).expire(now);
+            entity.changeStatus(expiration.status());
+            seatAssignmentJpa.deleteByReservationId(entity.id());
+        }
+        reservationJpa.flush();
+
+        return expired.size();
     }
 
     private Reservation toDomain(ReservationEntity entity) {

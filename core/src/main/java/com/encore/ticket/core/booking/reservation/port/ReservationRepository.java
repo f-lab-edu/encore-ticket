@@ -2,6 +2,7 @@ package com.encore.ticket.core.booking.reservation.port;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.OffsetDateTime;
 
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.exception.NotFoundException;
@@ -32,4 +33,6 @@ public interface ReservationRepository {
     Reservation prepareNextPaymentAttempt(String holdId, Long memberId);
 
     Reservation saveCancelled(Reservation cancelled);
+
+    int expireBatch(OffsetDateTime now, int batchSize);
 }

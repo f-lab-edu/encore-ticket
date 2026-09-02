@@ -52,4 +52,8 @@ public class ReservationEntity {
     private OffsetDateTime paymentStartsAt;
 
     private OffsetDateTime cancelledAt;
+
+    void changeStatus(ReservationStatus status) {
+        this.status = status;
+    }
 }

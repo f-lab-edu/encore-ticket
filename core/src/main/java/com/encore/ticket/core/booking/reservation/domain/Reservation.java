@@ -97,6 +97,16 @@ public class Reservation {
                 .build();
     }
 
+    public Reservation expire(OffsetDateTime now) {
+        if (!isPendingPayment() || now.isBefore(expiresAt)) {
+            throw new IllegalStateException("만료 대상이 아닌 예매는 만료 처리할 수 없습니다: " + id);
+        }
+
+        return toBuilder()
+                .status(ReservationStatus.EXPIRED)
+                .build();
+    }
+
     public Reservation startNextPaymentAttempt() {
         return toBuilder()
                 .paymentAttemptNo(paymentAttemptNo + 1)
