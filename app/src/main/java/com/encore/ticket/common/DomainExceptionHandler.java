@@ -80,7 +80,8 @@ public class DomainExceptionHandler {
                  HOLD_NOT_OWNED, RESERVATION_NOT_OWNED -> HttpStatus.FORBIDDEN;
             case SEAT_ALREADY_HELD, IDEMPOTENCY_KEY_REUSED,
                  PURCHASE_LIMIT_EXCEEDED, RESERVATION_CANCELLED,
-                 CANCELLATION_CLOSED, PAYMENT_IN_PROGRESS -> HttpStatus.CONFLICT;
+                 RESERVATION_CONCURRENTLY_MODIFIED, CANCELLATION_CLOSED,
+                 PAYMENT_IN_PROGRESS -> HttpStatus.CONFLICT;
             case HOLD_EXPIRED, QUEUE_TOKEN_EXPIRED -> HttpStatus.GONE;
         };
     }

@@ -1,3 +1,4 @@
+DELETE FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE schedule_id = 910);
 DELETE FROM seat_assignment WHERE schedule_id = 910;
 DELETE FROM reservation_seat WHERE schedule_id = 910;
 DELETE FROM reservation WHERE schedule_id = 910;

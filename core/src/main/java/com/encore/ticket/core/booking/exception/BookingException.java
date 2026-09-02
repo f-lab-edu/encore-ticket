@@ -11,4 +11,9 @@ public abstract class BookingException extends RuntimeException {
         super(detail);
         this.errorCode = errorCode;
     }
+
+    protected BookingException(BookingErrorCode errorCode, String detail, Throwable cause) {
+        super(detail, cause);
+        this.errorCode = errorCode;
+    }
 }

@@ -30,6 +30,7 @@ import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
 import com.encore.ticket.core.booking.exception.ReservationAlreadyExistsException;
+import com.encore.ticket.core.booking.exception.ReservationConcurrentModificationException;
 import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
 import com.encore.ticket.core.booking.exception.HoldExpiredException;
@@ -98,6 +99,22 @@ class ReservationRepositoryTransactionTest {
         Reservation reloaded = reservationRepository.getById(issued.id());
         assertThat(reloaded.status()).isEqualTo(ReservationStatus.CANCELLED);
         assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).isEmpty();
+    }
+
+    @Test
+    void 낡은_버전의_취소는_동시_변경_예외로_번역하고_좌석을_해제하지_않는다() {
+        Reservation issued = reservationRepository.saveIssued(newReservation());
+        Reservation stale = reservationRepository.getById(issued.id());
+        reservationRepository.save(stale.startNextPaymentAttempt());
+
+        assertThatThrownBy(() -> reservationRepository.saveCancelled(stale.cancel(CLOCK)))
+                .isInstanceOf(ReservationConcurrentModificationException.class);
+
+        Reservation reloaded = reservationRepository.getById(issued.id());
+        assertThat(reloaded.status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
+        assertThat(reloaded.paymentAttemptNo()).isEqualTo(2);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID))
+                .containsExactlyInAnyOrderElementsOf(SEAT_IDS);
     }
 
     @Test

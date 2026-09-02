@@ -3,6 +3,7 @@ package com.encore.ticket.core.booking.reservation.application;
 import com.encore.ticket.core.booking.dto.ReservationStatus;
 import com.encore.ticket.core.booking.exception.CancellationClosedException;
 import com.encore.ticket.core.booking.exception.PaymentInProgressException;
+import com.encore.ticket.core.booking.exception.ReservationConcurrentModificationException;
 import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import java.time.ZoneOffset;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,7 +51,7 @@ class ReservationServiceTest {
                 .id(RESERVATION_ID)
                 .memberId(MEMBER_ID)
                 .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
-                .status(ReservationStatus.CONFIRMED)
+                .status(ReservationStatus.PENDING_PAYMENT)
                 .build();
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
         given(reservationRepository.saveCancelled(any())).willAnswer(call -> call.getArgument(0));
@@ -58,7 +60,7 @@ class ReservationServiceTest {
 
         assertThat(result.alreadyCancelled()).isFalse();
         assertThat(result.response().status()).isEqualTo(ReservationStatus.CANCELLED);
-        assertThat(result.response().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T10:00:00Z"));
+        assertThat(result.response().cancelledAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T19:00:00+09:00"));
 
         ArgumentCaptor<Reservation> captor = ArgumentCaptor.forClass(Reservation.class);
         verify(reservationRepository).saveCancelled(captor.capture());
@@ -109,7 +111,7 @@ class ReservationServiceTest {
                 .id(RESERVATION_ID)
                 .memberId(MEMBER_ID)
                 .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:00:00Z"))
-                .status(ReservationStatus.CONFIRMED)
+                .status(ReservationStatus.PENDING_PAYMENT)
                 .build();
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
 
@@ -134,5 +136,84 @@ class ReservationServiceTest {
                 .isInstanceOf(PaymentInProgressException.class);
 
         verify(reservationRepository, never()).saveCancelled(any());
+    }
+
+    @Test
+    void 결제_완료_예매는_환불_연동_전까지_취소하지_않는다() {
+        Reservation reservation = cancellable().toBuilder()
+                .status(ReservationStatus.CONFIRMED)
+                .build();
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(reservation);
+
+        assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
+                .isInstanceOf(CancellationClosedException.class);
+
+        verify(reservationRepository, never()).saveCancelled(any());
+    }
+
+    @Test
+    void 만료_시각이_지났어도_EXPIRED_전환_전의_PENDING_PAYMENT는_취소한다() {
+        Reservation expiredByTime = cancellable().toBuilder()
+                .expiresAt(OffsetDateTime.parse("2026-08-04T09:59:59Z"))
+                .build();
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(expiredByTime);
+        given(reservationRepository.saveCancelled(any())).willAnswer(call -> call.getArgument(0));
+
+        CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
+
+        assertThat(result.response().status()).isEqualTo(ReservationStatus.CANCELLED);
+    }
+
+    @Test
+    void 충돌_후_이미_취소됐으면_재저장하지_않고_재취소로_응답한다() {
+        Reservation pending = cancellable().toBuilder().version(1L).build();
+        Reservation cancelled = pending.cancel(CLOCK).toBuilder().version(2L).build();
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(pending, cancelled);
+        given(reservationRepository.saveCancelled(any()))
+                .willThrow(new ReservationConcurrentModificationException(new RuntimeException()));
+
+        CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
+
+        assertThat(result.alreadyCancelled()).isTrue();
+        verify(reservationRepository).saveCancelled(any());
+    }
+
+    @Test
+    void 충돌_후에도_취소_가능하면_최신_버전으로_한번_재시도한다() {
+        Reservation first = cancellable().toBuilder().version(1L).paymentAttemptNo(1).build();
+        Reservation latest = first.toBuilder().version(2L).paymentAttemptNo(2).build();
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(first, latest);
+        given(reservationRepository.saveCancelled(any()))
+                .willThrow(new ReservationConcurrentModificationException(new RuntimeException()))
+                .willAnswer(call -> call.getArgument(0));
+
+        CancelResult result = service.cancel(RESERVATION_ID, MEMBER_ID);
+
+        assertThat(result.response().status()).isEqualTo(ReservationStatus.CANCELLED);
+        verify(reservationRepository, times(2)).saveCancelled(any());
+    }
+
+    @Test
+    void 재시도도_충돌하면_409로_변환할_동시_변경_예외를_유지한다() {
+        Reservation first = cancellable().toBuilder().version(1L).build();
+        Reservation latest = first.toBuilder().version(2L).paymentAttemptNo(2).build();
+        given(reservationRepository.getById(RESERVATION_ID)).willReturn(first, latest);
+        given(reservationRepository.saveCancelled(any()))
+                .willThrow(new ReservationConcurrentModificationException(new RuntimeException()));
+
+        assertThatThrownBy(() -> service.cancel(RESERVATION_ID, MEMBER_ID))
+                .isInstanceOf(ReservationConcurrentModificationException.class);
+
+        verify(reservationRepository, times(2)).saveCancelled(any());
+    }
+
+    private Reservation cancellable() {
+        return Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .performanceStartsAt(OffsetDateTime.parse("2026-08-04T10:30:00Z"))
+                .expiresAt(OffsetDateTime.parse("2026-08-04T10:10:00Z"))
+                .status(ReservationStatus.PENDING_PAYMENT)
+                .build();
     }
 }

@@ -3,6 +3,7 @@ package com.encore.ticket.core.payment.application;
 import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
 import com.encore.ticket.core.payment.port.PaymentRepository;
+import com.encore.ticket.core.booking.CompletedPayment;
 
 import java.util.Optional;
 
@@ -35,5 +36,25 @@ class PaymentQueryServiceTest {
                         .orderId("reservation-501-2").status(PaymentStatus.FAILED).build()));
 
         assertThat(service.latestAttemptOf("hold_7f32")).contains(PaymentStatus.FAILED);
+    }
+
+    @Test
+    void 예매의_완료된_결제를_상세_조회용_값으로_돌려준다() {
+        given(paymentRepository.findCompletedByReservationId(501L))
+                .willReturn(Optional.of(Payment.builder()
+                        .paymentKey("payment-key")
+                        .orderId("reservation-501-1")
+                        .status(PaymentStatus.COMPLETED)
+                        .build()));
+
+        assertThat(service.completedPaymentOf(501L))
+                .isEqualTo(new CompletedPayment("payment-key", "reservation-501-1"));
+    }
+
+    @Test
+    void 완료된_결제가_없으면_상세_조회용_값은_비어_있다() {
+        given(paymentRepository.findCompletedByReservationId(501L)).willReturn(Optional.empty());
+
+        assertThat(service.completedPaymentOf(501L)).isEqualTo(CompletedPayment.NONE);
     }
 }

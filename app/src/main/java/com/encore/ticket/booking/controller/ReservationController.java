@@ -6,12 +6,12 @@ import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
 import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
 import com.encore.ticket.core.booking.dto.SeatHoldResponse;
 import com.encore.ticket.core.booking.dto.SeatHoldResult;
-import com.encore.ticket.core.booking.exception.CancellationClosedException;
-import com.encore.ticket.core.booking.exception.PaymentInProgressException;
-import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
 import com.encore.ticket.core.booking.PaymentAttemptState;
 import com.encore.ticket.core.booking.reservation.application.CreateResult;
 import com.encore.ticket.core.booking.reservation.application.ReservationCreateService;
+import com.encore.ticket.core.booking.reservation.application.ReservationQueryService;
+import com.encore.ticket.core.booking.reservation.application.ReservationService;
+import com.encore.ticket.core.booking.reservation.application.CancelResult;
 import com.encore.ticket.core.payment.application.PaymentQueryService;
 import com.encore.ticket.core.booking.hold.application.SeatHoldService;
 import com.encore.ticket.core.catalog.dto.PageResponse;
@@ -34,7 +34,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/reservations")
@@ -45,18 +44,24 @@ public class ReservationController {
     private final ScheduleCatalogReader scheduleCatalogReader;
     private final ReservationCreateService reservationCreateService;
     private final PaymentQueryService paymentQueryService;
+    private final ReservationQueryService reservationQueryService;
+    private final ReservationService reservationService;
 
     public ReservationController(
             QueueAuthorizationService queueAuthorizationService,
             SeatHoldService seatHoldService,
             ScheduleCatalogReader scheduleCatalogReader,
             ReservationCreateService reservationCreateService,
-            PaymentQueryService paymentQueryService) {
+            PaymentQueryService paymentQueryService,
+            ReservationQueryService reservationQueryService,
+            ReservationService reservationService) {
         this.queueAuthorizationService = queueAuthorizationService;
         this.seatHoldService = seatHoldService;
         this.scheduleCatalogReader = scheduleCatalogReader;
         this.reservationCreateService = reservationCreateService;
         this.paymentQueryService = paymentQueryService;
+        this.reservationQueryService = reservationQueryService;
+        this.reservationService = reservationService;
     }
 
     @PostMapping("/holds")
@@ -95,54 +100,31 @@ public class ReservationController {
 
     @GetMapping
     PageResponse<ReservationSummaryResponse> reservations(
+            @AuthenticationPrincipal Long memberId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
 
-        return StubReservations.page(page, size);
+        return reservationQueryService.reservationsOf(memberId, page, size);
     }
 
     @GetMapping("/{reservationId}")
-    ReservationDetailResponse reservation(@PathVariable("reservationId") long reservationId) {
-        if (!StubReservations.exists(reservationId)) {
-            throw reservationNotFound(reservationId);
-        }
-        if (!StubReservations.ownedByStubMember(reservationId)) {
-            throw new ReservationNotOwnedException();
-        }
-
-        return StubReservations.detail(reservationId)
-                .orElseThrow(() -> reservationNotFound(reservationId));
+    ReservationDetailResponse reservation(
+            @PathVariable("reservationId") long reservationId,
+            @AuthenticationPrincipal Long memberId) {
+        return reservationQueryService.detail(
+                reservationId, memberId, () -> paymentQueryService.completedPaymentOf(reservationId));
     }
 
     @PatchMapping("/{reservationId}")
     ResponseEntity<ReservationCancelResponse> cancel(
             @PathVariable("reservationId") long reservationId,
+            @AuthenticationPrincipal Long memberId,
             @Valid @RequestBody ReservationCancelRequest request) {
-
-        if (!StubReservations.exists(reservationId)) {
-            throw reservationNotFound(reservationId);
-        }
-        if (!StubReservations.ownedByStubMember(reservationId)) {
-            throw new ReservationNotOwnedException();
-        }
-        if (StubReservations.alreadyCancelled(reservationId)) {
+        CancelResult result = reservationService.cancel(reservationId, memberId);
+        if (result.alreadyCancelled()) {
             return ResponseEntity.noContent().build();
         }
-        if (StubReservations.cancellationClosed(reservationId)) {
-            throw new CancellationClosedException();
-        }
-        if (StubReservations.paymentInProgress(reservationId)) {
-            throw new PaymentInProgressException();
-        }
-
-        return ResponseEntity.ok(StubReservations.cancel(reservationId));
+        return ResponseEntity.ok(result.response());
     }
 
-    private static ResponseStatusException reservationNotFound(long reservationId) {
-        return notFound("존재하지 않는 예매입니다: " + reservationId);
-    }
-
-    private static ResponseStatusException notFound(String detail) {
-        return new ResponseStatusException(HttpStatus.NOT_FOUND, detail);
-    }
 }
