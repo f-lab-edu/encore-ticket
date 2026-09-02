@@ -1,5 +1,7 @@
 package com.encore.ticket.storage.redis.booking.hold;
 
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -10,10 +12,11 @@ import org.springframework.data.redis.core.script.RedisScript;
 public class SeatHoldRedisConfig {
 
     @Bean
-    public RedisScript<Long> acquireSeatHoldScript() {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+    @SuppressWarnings("rawtypes")
+    public RedisScript<List> acquireSeatHoldScript() {
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource("scripts/acquire-seat-hold.lua"));
-        script.setResultType(Long.class);
+        script.setResultType(List.class);
         return script;
     }
 }

@@ -104,7 +104,7 @@ class ReservationTransactionBoundaryTest {
 
     private SeatHold holdOf(long memberId, List<Long> seatIds) {
         SeatHold hold = SeatHold.hold(SCHEDULE_ID, seatIds, memberId, clock);
-        assertThat(seatHoldRepository.acquire(hold, NO_PURCHASE_LIMIT))
+        assertThat(seatHoldRepository.acquire(hold, NO_PURCHASE_LIMIT, "idem-" + hold.holdId(), "fp-" + hold.holdId()).result())
                 .isEqualTo(SeatHoldAcquireResult.ACQUIRED);
         return hold;
     }

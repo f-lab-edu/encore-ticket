@@ -1,4 +1,4 @@
-package com.encore.ticket.common;
+package com.encore.ticket.core.exception;
 
 public class InvalidRequestFieldException extends RuntimeException {
 

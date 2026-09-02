@@ -9,6 +9,9 @@ public interface SeatHoldRepository {
 
     Map<Long, OffsetDateTime> holdExpiryBySeatId(Long scheduleId);
 
-    SeatHoldAcquireResult acquire(SeatHold seatHold, int maxSeatsPerSchedule);
-
+    SeatHoldAcquisition acquire(
+            SeatHold seatHold,
+            int maxSeatsPerSchedule,
+            String idempotencyKey,
+            String requestFingerprint);
 }

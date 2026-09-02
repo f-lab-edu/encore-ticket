@@ -5,18 +5,17 @@ import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
 import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
 import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
 import com.encore.ticket.core.booking.dto.SeatHoldResponse;
+import com.encore.ticket.core.booking.dto.SeatHoldResult;
 import com.encore.ticket.core.booking.exception.CancellationClosedException;
 import com.encore.ticket.core.booking.exception.HoldExpiredException;
 import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
-import com.encore.ticket.core.booking.exception.IdempotencyKeyReusedException;
 import com.encore.ticket.core.booking.exception.PaymentInProgressException;
-import com.encore.ticket.core.booking.exception.PurchaseLimitExceededException;
 import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
 import com.encore.ticket.core.booking.exception.ReservationCancelledException;
-import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
+import com.encore.ticket.core.booking.hold.application.SeatHoldService;
 import com.encore.ticket.core.catalog.dto.PageResponse;
 import com.encore.ticket.core.booking.queue.application.QueueAuthorizationService;
-import com.encore.ticket.common.InvalidRequestFieldException;
+import com.encore.ticket.core.catalog.port.ScheduleCatalogReader;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -41,9 +40,16 @@ import org.springframework.web.server.ResponseStatusException;
 public class ReservationController {
 
     private final QueueAuthorizationService queueAuthorizationService;
+    private final SeatHoldService seatHoldService;
+    private final ScheduleCatalogReader scheduleCatalogReader;
 
-    public ReservationController(QueueAuthorizationService queueAuthorizationService) {
+    public ReservationController(
+            QueueAuthorizationService queueAuthorizationService,
+            SeatHoldService seatHoldService,
+            ScheduleCatalogReader scheduleCatalogReader) {
         this.queueAuthorizationService = queueAuthorizationService;
+        this.seatHoldService = seatHoldService;
+        this.scheduleCatalogReader = scheduleCatalogReader;
     }
 
     @PostMapping("/holds")
@@ -53,35 +59,15 @@ public class ReservationController {
             @AuthenticationPrincipal Long memberId,
             @Valid @RequestBody SeatHoldRequest request) {
 
-        if (!StubSchedules.exists(request.scheduleId())) {
-            throw notFound("존재하지 않는 회차입니다: " + request.scheduleId());
-        }
+        scheduleCatalogReader.scheduleOf(request.scheduleId());
         queueAuthorizationService.authorize(request.scheduleId(), memberId, queueToken);
-        if (StubReservations.REUSED_IDEMPOTENCY_KEY.equals(idempotencyKey)) {
-            throw new IdempotencyKeyReusedException();
-        }
-        if (request.scheduleId() == StubReservations.PURCHASE_LIMIT_SCHEDULE_ID) {
-            throw new PurchaseLimitExceededException();
-        }
 
-        for (long seatId : request.seatIds()) {
-            if (!StubReservations.seatExists(seatId)) {
-                throw notFound("존재하지 않는 좌석입니다: " + seatId);
-            }
-            if (!StubReservations.seatBelongsTo(request.scheduleId(), seatId)) {
-                throw new InvalidRequestFieldException("seatIds", "회차에 속하지 않는 좌석입니다: " + seatId);
-            }
-            if (StubReservations.seatTaken(request.scheduleId(), seatId)) {
-                throw new SeatAlreadyHeldException();
-            }
-        }
+        SeatHoldResult result = seatHoldService.hold(
+                request.scheduleId(), request.seatIds(), memberId, idempotencyKey);
 
-        SeatHoldResponse response = StubReservations.hold(request.scheduleId(), request.seatIds());
-        HttpStatus status = StubReservations.REPLAYED_IDEMPOTENCY_KEY.equals(idempotencyKey)
-                ? HttpStatus.OK
-                : HttpStatus.CREATED;
+        HttpStatus status = result.replayed() ? HttpStatus.OK : HttpStatus.CREATED;
 
-        return ResponseEntity.status(status).body(response);
+        return ResponseEntity.status(status).body(result.response());
     }
 
     @PostMapping
