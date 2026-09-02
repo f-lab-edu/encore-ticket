@@ -18,6 +18,7 @@ import com.encore.ticket.core.catalog.application.ConcertLikeService;
 import com.encore.ticket.core.catalog.application.ConcertQueryService;
 import com.encore.ticket.core.catalog.application.ConcertRankingService;
 import com.encore.ticket.core.payment.application.PaymentService;
+import com.encore.ticket.core.payment.application.PaymentQueryService;
 
 class CoreServiceBeanTest extends ApiSpecTestSupport {
 
@@ -25,7 +26,7 @@ class CoreServiceBeanTest extends ApiSpecTestSupport {
     ApplicationContext context;
 
     @Test
-    void 구현이_있는_서비스_여덟이_빈으로_올라온다() {
+    void 구현이_있는_서비스가_빈으로_올라온다() {
         assertThat(context.getBeanNamesForType(QueueService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(SeatHoldService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(SeatMapService.class)).hasSize(1);
@@ -34,6 +35,7 @@ class CoreServiceBeanTest extends ApiSpecTestSupport {
         assertThat(context.getBeanNamesForType(ReservationQueryService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(ConcertQueryService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(ConcertLikeService.class)).hasSize(1);
+        assertThat(context.getBeanNamesForType(PaymentQueryService.class)).hasSize(1);
     }
 
     @Test

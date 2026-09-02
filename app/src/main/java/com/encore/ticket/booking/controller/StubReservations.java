@@ -8,10 +8,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import com.encore.ticket.core.booking.dto.ReservationCancelResponse;
-import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
 import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
 import com.encore.ticket.core.booking.dto.ReservationStatus;
 import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
@@ -19,18 +17,6 @@ import com.encore.ticket.core.booking.dto.SeatMapResponse;
 import com.encore.ticket.core.catalog.dto.PageResponse;
 
 final class StubReservations {
-
-    static final String OWN_HOLD_ID = "hold_ok";
-
-    static final String REPLAYED_HOLD_ID = "hold_replay";
-
-    static final String OTHER_MEMBER_HOLD_ID = "hold_other";
-
-    static final String CANCELLED_HOLD_ID = "hold_cancelled";
-
-    static final String EXPIRED_HOLD_ID = "hold_expired";
-
-    static final String MISSING_HOLD_ID = "hold_missing";
 
     static final long PENDING_RESERVATION_ID = 501L;
 
@@ -48,9 +34,6 @@ final class StubReservations {
 
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
-    private static final OffsetDateTime HOLD_EXPIRES_AT =
-            OffsetDateTime.of(2026, 8, 1, 20, 10, 0, 0, KST);
-
     private static final OffsetDateTime RESERVED_AT =
             OffsetDateTime.of(2026, 8, 1, 20, 7, 0, 0, KST);
 
@@ -60,37 +43,9 @@ final class StubReservations {
     private static final OffsetDateTime PERFORMANCE_STARTS_AT =
             OffsetDateTime.of(2026, 9, 1, 19, 0, 0, 0, KST);
 
-    private static final Set<String> KNOWN_HOLD_IDS = Set.of(
-            OWN_HOLD_ID, REPLAYED_HOLD_ID, OTHER_MEMBER_HOLD_ID, CANCELLED_HOLD_ID, EXPIRED_HOLD_ID);
-
     private static final Map<Long, StubReservation> RESERVATIONS = createReservations();
 
     private StubReservations() {
-    }
-
-    static boolean holdExists(String holdId) {
-        return KNOWN_HOLD_IDS.contains(holdId);
-    }
-
-    static ReservationCreateResponse create(String holdId) {
-        long reservationId = REPLAYED_HOLD_ID.equals(holdId)
-                ? CONFIRMED_RESERVATION_ID
-                : PENDING_RESERVATION_ID;
-
-        StubReservation reservation = RESERVATIONS.get(reservationId);
-
-        return new ReservationCreateResponse(
-                reservation.id(),
-                orderIdOf(reservation.id()),
-                reservation.orderName(),
-                reservation.totalAmount(),
-                reservation.status(),
-                HOLD_EXPIRES_AT,
-                HOLD_EXPIRES_AT);
-    }
-
-    static boolean createdBefore(String holdId) {
-        return REPLAYED_HOLD_ID.equals(holdId);
     }
 
     static PageResponse<ReservationSummaryResponse> page(int page, int size) {

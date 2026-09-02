@@ -7,11 +7,12 @@ import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
 import com.encore.ticket.core.booking.dto.SeatHoldResponse;
 import com.encore.ticket.core.booking.dto.SeatHoldResult;
 import com.encore.ticket.core.booking.exception.CancellationClosedException;
-import com.encore.ticket.core.booking.exception.HoldExpiredException;
-import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
 import com.encore.ticket.core.booking.exception.PaymentInProgressException;
 import com.encore.ticket.core.booking.exception.ReservationNotOwnedException;
-import com.encore.ticket.core.booking.exception.ReservationCancelledException;
+import com.encore.ticket.core.booking.PaymentAttemptState;
+import com.encore.ticket.core.booking.reservation.application.CreateResult;
+import com.encore.ticket.core.booking.reservation.application.ReservationCreateService;
+import com.encore.ticket.core.payment.application.PaymentQueryService;
 import com.encore.ticket.core.booking.hold.application.SeatHoldService;
 import com.encore.ticket.core.catalog.dto.PageResponse;
 import com.encore.ticket.core.booking.queue.application.QueueAuthorizationService;
@@ -42,14 +43,20 @@ public class ReservationController {
     private final QueueAuthorizationService queueAuthorizationService;
     private final SeatHoldService seatHoldService;
     private final ScheduleCatalogReader scheduleCatalogReader;
+    private final ReservationCreateService reservationCreateService;
+    private final PaymentQueryService paymentQueryService;
 
     public ReservationController(
             QueueAuthorizationService queueAuthorizationService,
             SeatHoldService seatHoldService,
-            ScheduleCatalogReader scheduleCatalogReader) {
+            ScheduleCatalogReader scheduleCatalogReader,
+            ReservationCreateService reservationCreateService,
+            PaymentQueryService paymentQueryService) {
         this.queueAuthorizationService = queueAuthorizationService;
         this.seatHoldService = seatHoldService;
         this.scheduleCatalogReader = scheduleCatalogReader;
+        this.reservationCreateService = reservationCreateService;
+        this.paymentQueryService = paymentQueryService;
     }
 
     @PostMapping("/holds")
@@ -71,26 +78,19 @@ public class ReservationController {
     }
 
     @PostMapping
-    ResponseEntity<ReservationCreateResponse> create(@Valid @RequestBody ReservationCreateRequest request) {
-        String holdId = request.holdId();
-
-        if (!StubReservations.holdExists(holdId)) {
-            throw notFound("존재하지 않는 선점 정보입니다: " + holdId);
-        }
-        if (StubReservations.OTHER_MEMBER_HOLD_ID.equals(holdId)) {
-            throw new HoldNotOwnedException();
-        }
-        if (StubReservations.CANCELLED_HOLD_ID.equals(holdId)) {
-            throw new ReservationCancelledException();
-        }
-        if (StubReservations.EXPIRED_HOLD_ID.equals(holdId)) {
-            throw new HoldExpiredException();
-        }
-
-        ReservationCreateResponse response = StubReservations.create(holdId);
-        HttpStatus status = StubReservations.createdBefore(holdId) ? HttpStatus.OK : HttpStatus.CREATED;
-
-        return ResponseEntity.status(status).body(response);
+    ResponseEntity<ReservationCreateResponse> create(
+            @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody ReservationCreateRequest request) {
+        PaymentAttemptState lastAttempt = paymentQueryService.latestAttemptOf(request.holdId())
+                .map(status -> switch (status) {
+                    case PENDING -> PaymentAttemptState.PENDING;
+                    case FAILED -> PaymentAttemptState.FAILED;
+                    case COMPLETED -> PaymentAttemptState.COMPLETED;
+                })
+                .orElse(PaymentAttemptState.NONE);
+        CreateResult result = reservationCreateService.create(request.holdId(), memberId, lastAttempt);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(result.response());
     }
 
     @GetMapping

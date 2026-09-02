@@ -14,7 +14,6 @@ import com.encore.ticket.core.payment.exception.StalePaymentAttemptException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.Optional;
 import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.port.PaymentGateway;
 import com.encore.ticket.core.payment.port.PaymentRepository;
@@ -74,10 +73,6 @@ public class PaymentService {
         paymentGateway.requestApproval(paymentKey, orderId, amount);
 
         return toResponse(accepted);
-    }
-
-    public Optional<PaymentStatus> latestAttemptOf(String holdId) {
-        return paymentRepository.findLatestByHoldId(holdId).map(Payment::status);
     }
 
     public PaymentResultResponse result(String orderId, Long memberId, String reservationStatus) {

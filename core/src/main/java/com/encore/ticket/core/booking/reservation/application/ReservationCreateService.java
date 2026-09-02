@@ -4,13 +4,15 @@ import com.encore.ticket.core.booking.PaymentAttemptState;
 import com.encore.ticket.core.booking.dto.ReservationCreateResponse;
 import com.encore.ticket.core.booking.exception.HoldExpiredException;
 import com.encore.ticket.core.booking.exception.HoldNotOwnedException;
-import com.encore.ticket.core.booking.exception.ReservationCancelledException;
+import com.encore.ticket.core.booking.exception.ReservationAlreadyExistsException;
 import com.encore.ticket.core.catalog.port.ScheduleCatalogReader;
 import com.encore.ticket.core.catalog.domain.ScheduleInfo;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
 import com.encore.ticket.core.catalog.domain.SeatInfo;
 
 import java.time.Clock;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import com.encore.ticket.core.booking.reservation.domain.HeldSeats;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
@@ -25,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ReservationCreateService {
 
+    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
+
     private final ReservationRepository reservationRepository;
     private final HoldReader holdReader;
     private final SeatCatalogReader seatCatalogReader;
@@ -32,33 +36,38 @@ public class ReservationCreateService {
     private final Clock clock;
 
     public CreateResult create(String holdId, Long memberId, PaymentAttemptState lastAttempt) {
+        return reservationRepository.findByHoldId(holdId)
+                .map(reservation -> new CreateResult(resume(reservation, memberId, lastAttempt), false))
+                .orElseGet(() -> createFresh(holdId, memberId, lastAttempt));
+    }
+
+    private CreateResult createFresh(String holdId, Long memberId, PaymentAttemptState lastAttempt) {
         HeldSeats hold = holdReader.getByHoldId(holdId);
         if (!hold.isOwnedBy(memberId)) {
             throw new HoldNotOwnedException();
         }
 
-        return reservationRepository.findByHoldId(holdId)
-                .map(reservation -> new CreateResult(resume(reservation, hold, lastAttempt), false))
-                .orElseGet(() -> new CreateResult(issueFresh(hold), true));
+        try {
+            return new CreateResult(issueFresh(hold), true);
+        } catch (ReservationAlreadyExistsException conflict) {
+            // saveIssued의 트랜잭션이 롤백된 뒤, 먼저 커밋된 예매를 새로 읽는다.
+            Reservation existing = reservationRepository.findByHoldId(holdId).orElseThrow(() -> conflict);
+            return new CreateResult(resume(existing, memberId, lastAttempt), false);
+        }
     }
 
-    private ReservationCreateResponse resume(Reservation stored, HeldSeats hold,
+    private ReservationCreateResponse resume(Reservation stored, Long memberId,
                                              PaymentAttemptState lastAttempt) {
-        if (stored.isCancelled()) {
-            throw new ReservationCancelledException();
-        }
-        if (stored.isExpired(clock)) {
-            throw new HoldExpiredException();
-        }
+        stored.validatePaymentPreparation(memberId, clock);
 
         Reservation reservation = stored;
         if (stored.isPendingPayment() && lastAttempt == PaymentAttemptState.FAILED) {
-            reservation = stored.startNextPaymentAttempt();
-            reservationRepository.save(reservation);
+            // app에서 조회한 상태는 힌트다. 변경 여부는 잠금 안에서 현재 주문으로 다시 판단한다.
+            reservation = reservationRepository.prepareNextPaymentAttempt(stored.holdId(), memberId);
         }
 
-        List<SeatInfo> seats = seatCatalogReader.seatsByIds(hold.seatIds());
-        ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(hold.scheduleId());
+        List<SeatInfo> seats = seatCatalogReader.seatsByIds(reservation.seatIds());
+        ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(reservation.scheduleId());
         return toResponse(reservation, schedule, seats);
     }
 
@@ -84,8 +93,8 @@ public class ReservationCreateService {
                 orderName(schedule.concertTitle(), seats),
                 reservation.amount(),
                 reservation.status(),
-                reservation.expiresAt(),
-                reservation.originalExpiresAt());
+                reservation.expiresAt().withOffsetSameInstant(KST).truncatedTo(ChronoUnit.SECONDS),
+                reservation.originalExpiresAt().withOffsetSameInstant(KST).truncatedTo(ChronoUnit.SECONDS));
     }
 
     private String orderName(String concertTitle, List<SeatInfo> seats) {

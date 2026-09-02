@@ -25,5 +25,11 @@ public interface ReservationRepository {
 
     Reservation saveIssued(Reservation reservation);
 
+    /**
+     * 예매를 잠근 뒤 소유자와 유효 상태를 재검증하고, 현재 주문의 결제가 FAILED일 때만
+     * 다음 주문번호를 발급한다. 이미 발급된 미사용 주문번호는 그대로 반환한다.
+     */
+    Reservation prepareNextPaymentAttempt(String holdId, Long memberId);
+
     Reservation saveCancelled(Reservation cancelled);
 }
