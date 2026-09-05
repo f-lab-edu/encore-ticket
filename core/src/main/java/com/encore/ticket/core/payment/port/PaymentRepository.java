@@ -4,6 +4,8 @@ import java.util.Optional;
 
 import com.encore.ticket.core.exception.NotFoundException;
 import com.encore.ticket.core.payment.domain.Payment;
+import java.time.OffsetDateTime;
+import java.util.List;
 
 public interface PaymentRepository {
 
@@ -21,4 +23,12 @@ public interface PaymentRepository {
     Optional<Payment> findCompletedByReservationId(Long reservationId);
 
     void save(Payment payment);
+
+    PaymentStartResult start(PaymentStartCommand command);
+
+    PaymentSettlementResult settle(PaymentSettlementCommand command);
+
+    Payment decline(String paymentKey, String orderId, String reason);
+
+    List<Payment> findPendingForRecovery(OffsetDateTime before, int batchSize);
 }
