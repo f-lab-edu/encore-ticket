@@ -48,4 +48,22 @@ public class PaymentEntity {
     private OffsetDateTime approvedAt;
 
     private String failReason;
+
+    private OffsetDateTime lastRecoveryAt;
+
+    void markRecovery(OffsetDateTime at) {
+        this.lastRecoveryAt = at;
+    }
+
+    void complete(String method, OffsetDateTime approvedAt) {
+        this.status = PaymentStatus.COMPLETED;
+        this.method = method;
+        this.approvedAt = approvedAt;
+        this.failReason = null;
+    }
+
+    void fail(String reason) {
+        this.status = PaymentStatus.FAILED;
+        this.failReason = reason;
+    }
 }
