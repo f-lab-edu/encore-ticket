@@ -13,6 +13,9 @@ public record PaymentRefund(Long id, Long paymentId, String paymentKey, String i
         if (payment.id() == null) {
             throw new IllegalArgumentException("저장된 결제만 환불할 수 있습니다");
         }
+        if (!payment.isCompleted()) {
+            throw new IllegalArgumentException("승인된 결제만 환불할 수 있습니다");
+        }
         return new PaymentRefund(null, payment.id(), payment.paymentKey(),
                 "refund-" + payment.paymentKey(), payment.amount(),
                 PaymentRefundStatus.PENDING, reason, null, null);

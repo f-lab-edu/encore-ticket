@@ -13,7 +13,7 @@ class PaymentRefundTest {
     private static final OffsetDateTime COMPLETED_AT = OffsetDateTime.parse("2026-09-05T01:02:03Z");
 
     @Test
-    void 저장된_결제로부터_멱등한_PENDING_환불을_만든다() {
+    void 저장된_승인_결제로부터_멱등한_PENDING_환불을_만든다() {
         Payment payment = payment(42L, "pay-key");
 
         PaymentRefund first = PaymentRefund.pending(payment, "예매 확정 불가");
@@ -23,6 +23,28 @@ class PaymentRefundTest {
         assertThat(first.paymentId()).isEqualTo(42L);
         assertThat(first.idempotencyKey()).isEqualTo("refund-pay-key");
         assertThat(first.status()).isEqualTo(PaymentRefundStatus.PENDING);
+    }
+
+    @Test
+    void PENDING_결제로는_환불을_만들_수_없다() {
+        Payment payment = payment(42L, "pay-key").toBuilder()
+                .status(PaymentStatus.PENDING)
+                .build();
+
+        assertThatThrownBy(() -> PaymentRefund.pending(payment, "reason"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("승인된 결제만 환불할 수 있습니다");
+    }
+
+    @Test
+    void FAILED_결제로는_환불을_만들_수_없다() {
+        Payment payment = payment(42L, "pay-key").toBuilder()
+                .status(PaymentStatus.FAILED)
+                .build();
+
+        assertThatThrownBy(() -> PaymentRefund.pending(payment, "reason"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("승인된 결제만 환불할 수 있습니다");
     }
 
     @Test

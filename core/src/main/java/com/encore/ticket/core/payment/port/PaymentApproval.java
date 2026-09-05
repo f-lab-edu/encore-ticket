@@ -2,7 +2,6 @@ package com.encore.ticket.core.payment.port;
 
 import java.time.OffsetDateTime;
 
-/** Technology-neutral result returned by a payment provider. */
 public record PaymentApproval(
         State state,
         String paymentKey,
