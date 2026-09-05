@@ -25,6 +25,17 @@ spring:
         skip: never
 
 ticket:
+  payment:
+    toss:
+      secret-key: ${TOSS_SECRET_KEY:}
+      base-url: https://api.tosspayments.com
+      connect-timeout: 3s
+      read-timeout: 60s
+    recovery:
+      delay: 70s
+      batch-size: 20
+      scheduler-interval: 10s
+
   reservation:
     expiry:
       batch-size: 100
