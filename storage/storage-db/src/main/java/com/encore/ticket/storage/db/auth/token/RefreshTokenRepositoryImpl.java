@@ -36,10 +36,12 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
     @Override
     public void saveRotation(RefreshToken rotated, RefreshToken issued) {
         if (!rotated.isRotated()) {
-            throw new IllegalArgumentException("회전 표시가 되지 않은 토큰입니다: " + rotated.id());
+            throw new IllegalArgumentException(
+                    "기존 토큰은 ROTATED 상태여야 합니다: " + rotated.id());
         }
         if (issued.id() != null) {
-            throw new IllegalArgumentException("이미 저장된 토큰은 발급할 수 없습니다: " + issued.id());
+            throw new IllegalArgumentException(
+                    "새 토큰에는 ID가 없어야 합니다: " + issued.id());
         }
 
         refreshTokenJpa.save(RefreshTokenMapper.toEntity(rotated));
