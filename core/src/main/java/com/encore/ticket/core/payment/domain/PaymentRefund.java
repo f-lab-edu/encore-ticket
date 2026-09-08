@@ -7,7 +7,17 @@ import lombok.Builder;
 @Builder(toBuilder = true)
 public record PaymentRefund(Long id, Long paymentId, String paymentKey, String idempotencyKey,
                             Long amount, PaymentRefundStatus status, String reason,
-                            OffsetDateTime completedAt, String failureReason) {
+                            OffsetDateTime completedAt, String failureReason,
+                            PaymentRefundRecovery recovery, PaymentRefundAttention attention) {
+
+    public PaymentRefund {
+        if (attention == null) {
+            attention = PaymentRefundAttention.none();
+        }
+        if (recovery == null) {
+            recovery = PaymentRefundRecovery.initial();
+        }
+    }
 
     public static PaymentRefund pending(Payment payment, String reason) {
         if (payment.id() == null) {
@@ -18,7 +28,7 @@ public record PaymentRefund(Long id, Long paymentId, String paymentKey, String i
         }
         return new PaymentRefund(null, payment.id(), payment.paymentKey(),
                 "refund-" + payment.paymentKey(), payment.amount(),
-                PaymentRefundStatus.PENDING, reason, null, null);
+                PaymentRefundStatus.PENDING, reason, null, null, PaymentRefundRecovery.initial(), PaymentRefundAttention.none());
     }
 
     public PaymentRefund complete(OffsetDateTime at) {

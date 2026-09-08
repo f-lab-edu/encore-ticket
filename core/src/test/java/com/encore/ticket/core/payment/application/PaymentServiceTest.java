@@ -12,6 +12,7 @@ import com.encore.ticket.core.payment.dto.PaymentStatus;
 import com.encore.ticket.core.payment.exception.PaymentGatewayException;
 import com.encore.ticket.core.payment.exception.ReservationNotOwnedException;
 import com.encore.ticket.core.payment.port.PaymentApproval;
+import com.encore.ticket.core.payment.port.PaymentRefundClaim;
 import com.encore.ticket.core.payment.port.PaymentCancellation;
 import com.encore.ticket.core.payment.port.PaymentGateway;
 import com.encore.ticket.core.payment.port.PaymentRefundRepository;
@@ -21,7 +22,9 @@ import com.encore.ticket.core.payment.port.PaymentSettlementResult;
 import com.encore.ticket.core.payment.port.PaymentStartCommand;
 import com.encore.ticket.core.payment.port.PaymentStartResult;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -63,7 +66,8 @@ class PaymentServiceTest {
                 paymentRepository,
                 paymentRefundRepository,
                 reservationRepository,
-                paymentGateway);
+                paymentGateway,
+                Clock.fixed(APPROVED_AT.toInstant(), ZoneOffset.UTC));
     }
 
     @Test
@@ -191,6 +195,8 @@ class PaymentServiceTest {
                 .willReturn(PaymentSettlementResult.refundRequired(completed, refund));
         given(paymentRefundRepository.findByPaymentId(completed.id()))
                 .willReturn(Optional.of(refund));
+        prepareInitialRefund(refund);
+        given(paymentRefundRepository.finishClaim(any(), any(), any())).willReturn(refund);
         given(paymentGateway.cancel(PAYMENT_KEY, AMOUNT, refund.reason(), refund.idempotencyKey()))
                 .willThrow(new PaymentGatewayException("timeout"));
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
@@ -214,11 +220,12 @@ class PaymentServiceTest {
                 .willReturn(PaymentStartResult.replayed(completed));
         given(paymentRefundRepository.findByPaymentId(completed.id()))
                 .willReturn(Optional.of(pendingRefund));
+        prepareInitialRefund(pendingRefund);
         given(paymentGateway.cancel(
                 PAYMENT_KEY, AMOUNT, pendingRefund.reason(), pendingRefund.idempotencyKey()))
                 .willReturn(PaymentCancellation.completed(
                         PAYMENT_KEY, AMOUNT, completedRefund.completedAt()));
-        given(paymentRefundRepository.complete(pendingRefund, completedRefund.completedAt()))
+        given(paymentRefundRepository.finishClaim(any(), any(), any()))
                 .willReturn(completedRefund);
         given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
                 ReservationStatus.CANCELLED)));
@@ -269,12 +276,13 @@ class PaymentServiceTest {
         given(paymentRepository.findPendingForRecovery(cutoff, 20))
                 .willReturn(List.of(pending));
         given(paymentGateway.query(PAYMENT_KEY)).willReturn(PaymentApproval.pending(
-                PAYMENT_KEY, ORDER_ID, AMOUNT, "IN_PROGRESS"));
+                PAYMENT_KEY, ORDER_ID, AMOUNT, "READY"));
 
         int recovered = service.recoverPending(cutoff, 20);
 
         assertThat(recovered).isEqualTo(1);
         verify(paymentGateway).query(PAYMENT_KEY);
+        verify(paymentGateway, never()).approve(any(), any(), any());
         verify(paymentRepository, never()).settle(any());
         verify(paymentRepository, never()).decline(any(), any(), any());
     }
@@ -299,17 +307,27 @@ class PaymentServiceTest {
     @Test
     void 한_환불의_DB_복구가_실패해도_다음_환불을_처리한다() {
         PaymentRefund refund = pendingRefund(completedPayment());
-        given(paymentRefundRepository.findPendingForRecovery(APPROVED_AT, 20))
+        given(paymentRefundRepository.findForResultRecovery(APPROVED_AT, 20))
                 .willReturn(List.of(refund, refund));
-        given(paymentGateway.cancel(any(), any(), any(), any()))
+        given(paymentRefundRepository.tryClaim(refund.paymentId()))
+                .willReturn(Optional.of(new PaymentRefundClaim("token", refund, APPROVED_AT)));
+        given(paymentGateway.queryCancellation(PAYMENT_KEY, AMOUNT))
                 .willReturn(PaymentCancellation.completed(PAYMENT_KEY, AMOUNT, APPROVED_AT));
-        given(paymentRefundRepository.complete(refund, APPROVED_AT))
+        given(paymentRefundRepository.finishClaim(any(), any(), any()))
                 .willThrow(new IllegalStateException("DB 복구 실패"))
                 .willReturn(refund);
 
         assertThat(service.recoverRefunds(APPROVED_AT, 20)).isEqualTo(2);
 
-        verify(paymentRefundRepository, org.mockito.Mockito.times(2)).complete(refund, APPROVED_AT);
+        verify(paymentRefundRepository, org.mockito.Mockito.times(2)).finishClaim(any(), any(), any());
+    }
+
+    private void prepareInitialRefund(PaymentRefund refund) {
+        given(paymentRefundRepository.tryClaim(refund.paymentId()))
+                .willReturn(Optional.of(new PaymentRefundClaim("token", refund, null)));
+        given(paymentGateway.queryCancellation(PAYMENT_KEY, AMOUNT))
+                .willReturn(PaymentCancellation.notCanceled(PAYMENT_KEY));
+        given(paymentRefundRepository.markRequestStarted(any())).willReturn(true);
     }
 
     private static Payment payment(PaymentStatus status) {

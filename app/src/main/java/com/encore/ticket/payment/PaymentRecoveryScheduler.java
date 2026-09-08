@@ -42,18 +42,21 @@ public class PaymentRecoveryScheduler {
             scheduler = "paymentRecoveryTaskScheduler")
     public void recover() {
         OffsetDateTime cutoff = OffsetDateTime.now(clock).minus(recoveryDelay);
+        int paymentCount = 0;
+        int refundCount = 0;
         try {
-            int paymentCount = paymentService.recoverPending(cutoff, batchSize);
-            int refundCount = paymentService.recoverRefunds(cutoff, batchSize);
-            if (paymentCount > 0 || refundCount > 0) {
-                log.info(
-                        "event=payment_recovery_scanned paymentCount={} refundCount={} cutoff={}",
-                        paymentCount, refundCount, cutoff);
-            }
+            paymentCount = paymentService.recoverPending(cutoff, batchSize);
         } catch (RuntimeException exception) {
-            log.error(
-                    "event=payment_recovery_failed batchSize={} cutoff={} errorType={}",
-                    batchSize, cutoff, exception.getClass().getSimpleName(), exception);
+            log.error("event=payment_recovery_failed batchSize={} cutoff={}", batchSize, cutoff, exception);
+        }
+        try {
+            refundCount = paymentService.recoverRefunds(cutoff, batchSize);
+        } catch (RuntimeException exception) {
+            log.error("event=refund_result_recovery_failed batchSize={} cutoff={}", batchSize, cutoff, exception);
+        }
+        if (paymentCount > 0 || refundCount > 0) {
+            log.info("event=payment_recovery_scanned paymentCount={} refundCount={} cutoff={}",
+                    paymentCount, refundCount, cutoff);
         }
     }
 }

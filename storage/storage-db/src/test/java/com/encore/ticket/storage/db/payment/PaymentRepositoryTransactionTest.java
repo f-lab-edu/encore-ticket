@@ -204,13 +204,13 @@ class PaymentRepositoryTransactionTest {
         jdbcTemplate.update("UPDATE payment_refund SET created_at = ? WHERE payment_id IN (?, ?, ?)",
                 cutoff.minusSeconds(10), first.payment().id(), second.payment().id(), third.payment().id());
 
-        var refunds = paymentRefundRepository.findPendingForRecovery(cutoff, 2);
+        var refunds = paymentRefundRepository.findForResultRecovery(cutoff, 2);
         assertThat(refunds).extracting(refund -> refund.paymentId())
                 .containsExactly(first.payment().id(), second.payment().id());
-        assertThat(paymentRefundRepository.findPendingForRecovery(cutoff, 2))
+        assertThat(paymentRefundRepository.findForResultRecovery(cutoff, 2))
                 .extracting(refund -> refund.paymentId())
                 .containsExactly(third.payment().id());
-        assertThat(paymentRefundRepository.findPendingForRecovery(OffsetDateTime.now().plusSeconds(1), 2))
+        assertThat(paymentRefundRepository.findForResultRecovery(OffsetDateTime.now().plusSeconds(1), 2))
                 .extracting(refund -> refund.paymentId())
                 .containsExactly(first.payment().id(), second.payment().id());
     }

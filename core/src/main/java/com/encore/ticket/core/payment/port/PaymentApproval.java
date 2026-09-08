@@ -16,6 +16,7 @@ public record PaymentApproval(
         APPROVED,
         DECLINED,
         PENDING,
+        AWAITING_APPROVAL,
         CANCELED
     }
 
@@ -35,6 +36,11 @@ public record PaymentApproval(
                                           String providerState) {
         return new PaymentApproval(State.PENDING, paymentKey, orderId, amount, null,
                 null, providerState, providerState);
+    }
+
+    public static PaymentApproval awaitingApproval(String paymentKey, String orderId, Long amount) {
+        return new PaymentApproval(State.AWAITING_APPROVAL, paymentKey, orderId, amount, null,
+                null, null, null);
     }
 
     public static PaymentApproval canceled(String paymentKey, String orderId, Long amount,
