@@ -5,6 +5,7 @@ import com.encore.ticket.core.payment.domain.PaymentRefundRecovery;
 import com.encore.ticket.core.payment.domain.PaymentRefundAttention;
 import com.encore.ticket.core.payment.dto.RefundRecoveryCategory;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -40,14 +41,18 @@ public class PaymentRefundEntity {
 
     @Enumerated(EnumType.STRING)
     private RefundRecoveryCategory recoveryCategory;
+    @Column(name = "recovery_error_code")
     private String recoveryErrorCode;
     private int retryCount;
+    @Column(name = "next_retry_at")
     private OffsetDateTime nextRetryAt;
     private String recoveryStopReason;
 
     @Enumerated(EnumType.STRING)
     private PaymentRefundAttention.Reason attentionReason;
+    @Column(name = "attention_since")
     private OffsetDateTime attentionSince;
+    @Column(name = "attention_resolved_at")
     private OffsetDateTime attentionResolvedAt;
 
     private String executionToken;

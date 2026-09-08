@@ -9,6 +9,7 @@ import com.encore.ticket.core.payment.port.PaymentRefundClaim;
 import com.encore.ticket.core.payment.port.PaymentCancellation;
 import com.encore.ticket.storage.db.support.MySqlContainerConfig;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -181,7 +182,7 @@ class PaymentRefundRepositoryTransactionTest {
         PaymentRefundClaim claim = repository.tryClaim(81010L).orElseThrow();
         repository.finishClaim(claim, PaymentCancellation.notCanceled("payment-key-10"), null);
         assertThat(repository.findByPaymentId(81010L).orElseThrow()).isEqualTo(failed);
-        assertThat(repository.findForResultRecovery(OffsetDateTime.now(), 20))
+        assertThat(repository.findForResultRecovery(OffsetDateTime.now(ZoneOffset.UTC), 20))
                 .extracting(PaymentRefund::paymentId).containsExactly(81010L);
     }
 
@@ -203,7 +204,7 @@ class PaymentRefundRepositoryTransactionTest {
         assertThat(first).extracting(PaymentRefund::paymentId).containsExactly(81004L, 81005L);
         assertThat(second).extracting(PaymentRefund::paymentId).containsExactly(81006L);
         assertThat(repository.findForResultRecovery(before, 2)).isEmpty();
-        assertThat(repository.findForResultRecovery(OffsetDateTime.now().plusSeconds(1), 2))
+        assertThat(repository.findForResultRecovery(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(1), 2))
                 .extracting(PaymentRefund::paymentId).containsExactly(81004L, 81005L);
     }
 
@@ -314,9 +315,9 @@ class PaymentRefundRepositoryTransactionTest {
                 "reason", null, null, CREATED_AT);
         jdbcTemplate.update("UPDATE payment_refund SET retry_count = 5, recovery_stop_reason = '한도 소진' WHERE payment_id = 81001");
         jdbcTemplate.update("UPDATE payment_refund SET next_retry_at = ? WHERE payment_id = 81002",
-                OffsetDateTime.now().plusDays(1));
+                OffsetDateTime.now(ZoneOffset.UTC).plusDays(1));
 
-        assertThat(repository.findForResultRecovery(OffsetDateTime.now(), 20))
+        assertThat(repository.findForResultRecovery(OffsetDateTime.now(ZoneOffset.UTC), 20))
                 .extracting(PaymentRefund::paymentId).containsExactly(81001L, 81002L);
         assertThat(repository.findByPaymentId(81001L).orElseThrow().recovery().retryCount()).isEqualTo(5);
     }
@@ -327,10 +328,10 @@ class PaymentRefundRepositoryTransactionTest {
                 "reason", null, null, CREATED_AT);
         repository.tryClaim(81001L).orElseThrow();
 
-        assertThat(repository.findForResultRecovery(OffsetDateTime.now(), 20)).isEmpty();
+        assertThat(repository.findForResultRecovery(OffsetDateTime.now(ZoneOffset.UTC), 20)).isEmpty();
     }
 
-    private static List<PaymentCancellation> invalidCompletions() {
+    static List<PaymentCancellation> invalidCompletions() {
         return List.of(
                 PaymentCancellation.completed("other-payment", 12000L, COMPLETED_AT),
                 PaymentCancellation.completed("payment-key-1", 1L, COMPLETED_AT),

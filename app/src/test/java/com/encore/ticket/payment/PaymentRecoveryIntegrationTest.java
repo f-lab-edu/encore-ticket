@@ -11,11 +11,14 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -37,7 +40,6 @@ import static org.hamcrest.Matchers.equalTo;
 
 class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
 
-    private static final long RESERVATION_ID = 990501L;
     private static final String ORDER = "reservation-990501-1";
     private static final String KEY = "recovery-integration-key";
     private static final long AMOUNT = 30_000L;
@@ -58,8 +60,8 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     private final AtomicReference<String> cancellationError = new AtomicReference<>("PROVIDER_ERROR");
     private final ConcurrentLinkedQueue<String> idempotencyKeys = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<String> approvalBodies = new ConcurrentLinkedQueue<>();
-    private volatile CountDownLatch queries = new CountDownLatch(1);
-    private volatile CountDownLatch approvals = new CountDownLatch(1);
+    private final AtomicReference<CountDownLatch> queries = new AtomicReference<>(new CountDownLatch(1));
+    private final AtomicReference<CountDownLatch> approvals = new AtomicReference<>(new CountDownLatch(1));
 
     @DynamicPropertySource
     static void pgProperties(DynamicPropertyRegistry registry) {
@@ -69,7 +71,7 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @BeforeEach
-    void seedPayment() throws Exception {
+    void seedPayment() throws SQLException {
         cleanRows();
         PG.createContext("/v1/payments/" + KEY + "/cancel", exchange -> {
             cancellationCalls.incrementAndGet();
@@ -77,14 +79,14 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
                     + "\",\"message\":\"test cancellation error\"}");
         });
         PG.createContext("/v1/payments/" + KEY, exchange -> {
-            awaitBoth(queries);
+            awaitBoth(queries.get());
             respond(exchange, pgStatus.get());
         });
         PG.createContext("/v1/payments/confirm", exchange -> {
             approvalCalls.incrementAndGet();
             idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             approvalBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            awaitBoth(approvals);
+            awaitBoth(approvals.get());
             respond(exchange, "DONE");
         });
         execute("""
@@ -100,7 +102,7 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @AfterEach
-    void clean() throws Exception {
+    void clean() throws SQLException {
         PG.removeContext("/v1/payments/" + KEY + "/cancel");
         PG.removeContext("/v1/payments/" + KEY);
         PG.removeContext("/v1/payments/confirm");
@@ -114,9 +116,10 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void GET과_스케줄러가_동시에_재승인해도_같은_멱등키와_하나의_DB_완료로_수렴한다() throws Exception {
-        queries = new CountDownLatch(2);
-        approvals = new CountDownLatch(2);
+    void GET과_스케줄러가_동시에_재승인해도_같은_멱등키와_하나의_DB_완료로_수렴한다()
+            throws SQLException, InterruptedException, ExecutionException, TimeoutException {
+        queries.set(new CountDownLatch(2));
+        approvals.set(new CountDownLatch(2));
         PaymentRecoveryScheduler scheduler = new PaymentRecoveryScheduler(
                 service, clock, java.time.Duration.ofSeconds(70), 20);
 
@@ -139,7 +142,7 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 유예시간이_끝나도_미확정_좌석을_보호하고_나중에_DONE이면_확정한다() throws Exception {
+    void 유예시간이_끝나도_미확정_좌석을_보호하고_나중에_DONE이면_확정한다() throws SQLException {
         execute("""
                 UPDATE reservation SET expires_at = CURRENT_TIMESTAMP - INTERVAL 1 MINUTE,
                     payment_starts_at = CURRENT_TIMESTAMP - INTERVAL 11 MINUTE WHERE id = 990501
@@ -161,7 +164,7 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 환불_오류_후_GET은_재전송하지_않고_스케줄러가_완료와_확인필요_해제를_반영한다() throws Exception {
+    void 환불_오류_후_GET은_재전송하지_않고_스케줄러가_완료와_확인필요_해제를_반영한다() throws SQLException {
         prepareLateApproval();
 
         result(202, "COMPLETED");
@@ -197,7 +200,7 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 수정필요로_FAILED인_환불도_한도와_관계없이_PG_완료를_조회해_복구한다() throws Exception {
+    void 수정필요로_FAILED인_환불도_한도와_관계없이_PG_완료를_조회해_복구한다() throws SQLException {
         cancellationError.set("INVALID_REQUEST");
         prepareLateApproval();
         result("COMPLETED");
@@ -219,13 +222,13 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
         assertThat(cancellationCalls.get()).isEqualTo(1);
     }
 
-    private void prepareLateApproval() throws Exception {
+    private void prepareLateApproval() throws SQLException {
         execute("UPDATE reservation SET status = 'CANCELLED' WHERE id = 990501");
         execute("DELETE FROM seat_assignment WHERE reservation_id = 990501");
         pgStatus.set("DONE");
     }
 
-    private String refundValue(String column) throws Exception {
+    private String refundValue(String column) throws SQLException {
         return value("SELECT " + column + " FROM payment_refund WHERE payment_key = '" + KEY + "'");
     }
 
@@ -239,20 +242,20 @@ class PaymentRecoveryIntegrationTest extends ApiSpecTestSupport {
                 .then().statusCode(status).body("paymentStatus", equalTo(expected));
     }
 
-    private void cleanRows() throws Exception {
+    private void cleanRows() throws SQLException {
         execute("DELETE FROM payment_refund WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id = 990501)");
         execute("DELETE FROM payment WHERE reservation_id = 990501");
         execute("DELETE FROM seat_assignment WHERE reservation_id = 990501");
         execute("DELETE FROM reservation WHERE id = 990501");
     }
 
-    private void execute(String sql) throws Exception {
+    private void execute(String sql) throws SQLException {
         try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
             statement.executeUpdate(sql);
         }
     }
 
-    private String value(String sql) throws Exception {
+    private String value(String sql) throws SQLException {
         try (var connection = dataSource.getConnection(); var statement = connection.createStatement();
                 var result = statement.executeQuery(sql)) {
             assertThat(result.next()).isTrue();
