@@ -4,6 +4,11 @@ import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
 import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.domain.PaymentRefund;
+import com.encore.ticket.core.payment.domain.PaymentRefundRecovery;
+import com.encore.ticket.core.payment.domain.RefundRetryPolicy;
+import com.encore.ticket.core.payment.dto.PaymentRefundStatus;
+import com.encore.ticket.core.payment.dto.RefundRecoveryCategory;
+import com.encore.ticket.core.payment.port.PaymentRefundClaim;
 import com.encore.ticket.core.payment.dto.PaymentConfirmResponse;
 import com.encore.ticket.core.payment.dto.PaymentResultResponse;
 import com.encore.ticket.core.payment.exception.PaymentGatewayException;
@@ -18,6 +23,8 @@ import com.encore.ticket.core.payment.port.PaymentSettlementResult;
 import com.encore.ticket.core.payment.port.PaymentStartCommand;
 import com.encore.ticket.core.payment.port.PaymentStartResult;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -31,11 +38,13 @@ public class PaymentService {
 
     private static final System.Logger LOG = System.getLogger(PaymentService.class.getName());
     private static final int POLL_AFTER_SECONDS = 2;
+    private static final Duration APPROVAL_RETRY_WINDOW = Duration.ofMinutes(10);
 
     private final PaymentRepository paymentRepository;
     private final PaymentRefundRepository paymentRefundRepository;
     private final ReservationRepository reservationRepository;
     private final PaymentGateway paymentGateway;
+    private final Clock clock;
 
     public PaymentConfirmResponse confirm(
             String paymentKey, String orderId, Long amount, Long memberId) {
@@ -80,9 +89,9 @@ public class PaymentService {
     }
 
     public int recoverRefunds(OffsetDateTime before, int batchSize) {
-        List<PaymentRefund> pendingRefunds =
-                paymentRefundRepository.findPendingForRecovery(before, batchSize);
-        for (PaymentRefund refund : pendingRefunds) {
+        List<PaymentRefund> unresolvedRefunds =
+                paymentRefundRepository.findForResultRecovery(before, batchSize);
+        for (PaymentRefund refund : unresolvedRefunds) {
             try {
                 processRefund(refund);
             } catch (RuntimeException exception) {
@@ -90,7 +99,7 @@ public class PaymentService {
                         "event=refund_recovery_item_failed refundId=" + refund.id(), exception);
             }
         }
-        return pendingRefunds.size();
+        return unresolvedRefunds.size();
     }
 
     private Payment approve(Payment payment) {
@@ -106,12 +115,32 @@ public class PaymentService {
 
     private Payment queryAndRecover(Payment payment) {
         try {
-            return reconcile(payment, paymentGateway.query(payment.paymentKey()));
+            PaymentApproval approval = paymentGateway.query(payment.paymentKey());
+            validateProviderIdentity(payment, approval);
+            if (approval.state() == PaymentApproval.State.AWAITING_APPROVAL
+                    && canRetryApproval(payment)) {
+                return approve(payment);
+            }
+            return reconcile(payment, approval);
         } catch (PaymentGatewayException exception) {
             LOG.log(System.Logger.Level.WARNING,
                     "event=payment_query_unresolved paymentId=" + payment.id(), exception);
             return payment;
         }
+    }
+
+    private boolean canRetryApproval(Payment payment) {
+        Reservation reservation = reservationRepository.findById(payment.reservationId()).orElse(null);
+        if (reservation == null
+                || !reservation.isPendingPayment()
+                || !reservation.currentOrderId().equals(payment.orderId())
+                || reservation.paymentStartsAt() == null) {
+            return false;
+        }
+
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        OffsetDateTime startedAt = reservation.paymentStartsAt();
+        return !now.isBefore(startedAt) && now.isBefore(startedAt.plus(APPROVAL_RETRY_WINDOW));
     }
 
     private Payment reconcile(Payment payment, PaymentApproval approval) {
@@ -120,7 +149,7 @@ public class PaymentService {
             case APPROVED -> settle(approval).payment();
             case DECLINED, CANCELED -> paymentRepository.decline(
                     payment.paymentKey(), payment.orderId(), failureReason(approval));
-            case PENDING -> payment;
+            case PENDING, AWAITING_APPROVAL -> payment;
         };
     }
 
@@ -140,31 +169,64 @@ public class PaymentService {
         }
 
         PaymentRefund refund = paymentRefundRepository.findByPaymentId(payment.id())
-                .map(existing -> existing.isPending() ? processRefund(existing) : existing)
+                .map(this::processRefund)
                 .orElse(null);
         return new PaymentOutcome(payment, refund);
     }
 
     private PaymentRefund processRefund(PaymentRefund refund) {
-        if (!refund.isPending()) {
+        if (refund.status() == PaymentRefundStatus.COMPLETED) {
             return refund;
         }
-
+        var claimed = paymentRefundRepository.tryClaim(refund.paymentId());
+        if (claimed.isEmpty()) {
+            return paymentRefundRepository.findByPaymentId(refund.paymentId()).orElse(refund);
+        }
+        PaymentRefundClaim claim = claimed.get();
+        refund = claim.refund();
         try {
-            PaymentCancellation cancellation = paymentGateway.cancel(
-                    refund.paymentKey(),
-                    refund.amount(),
-                    refund.reason(),
-                    refund.idempotencyKey());
-            if (cancellation.isCompleted()) {
-                return paymentRefundRepository.complete(refund, cancellation.canceledAt());
+            PaymentCancellation observed = paymentGateway.queryCancellation(
+                    refund.paymentKey(), refund.amount());
+            if (observed.isCompleted()) {
+                return paymentRefundRepository.finishClaim(claim, observed, null);
             }
-            return paymentRefundRepository.fail(refund, cancellationFailure(cancellation));
+            // 전송 전인 최초 요청만 시작한다. 미완료 조회만으로 재전송을 허용하지 않는다.
+            if (observed.state() == PaymentCancellation.State.NOT_CANCELED
+                    && refund.isPending() && claim.requestStartedAt() == null
+                    && refund.recovery().retryCount() == 0
+                    && paymentRefundRepository.markRequestStarted(claim)) {
+                PaymentCancellation result = paymentGateway.cancel(refund.paymentKey(), refund.amount(),
+                        refund.reason(), refund.idempotencyKey());
+                if (result.isCompleted()) {
+                    return paymentRefundRepository.finishClaim(claim, result, null);
+                }
+                return paymentRefundRepository.finishClaim(claim, null,
+                        new PaymentRefundRecovery(result.recoveryCategory(), result.failureCode(),
+                                refund.recovery().retryCount(),
+                                result.recoveryCategory() == RefundRecoveryCategory.AUTOMATIC_RECOVERY_CANDIDATE
+                                        ? RefundRetryPolicy.nextRetryAt(refund.recovery().retryCount(),
+                                                OffsetDateTime.now(clock)).orElse(null) : null,
+                                "환불 재실행 조건 확인 필요"));
+            }
+            return paymentRefundRepository.finishClaim(claim, null,
+                    afterResultQuery(refund, "기존 환불 결과 확인 필요 · 새 요청 보류"));
         } catch (PaymentGatewayException exception) {
             LOG.log(System.Logger.Level.WARNING,
                     "event=refund_unresolved refundId=" + refund.id(), exception);
-            return refund;
+            return paymentRefundRepository.finishClaim(claim, null,
+                    afterResultQuery(refund, "PG 결과 확인 불가"));
+        } finally {
+            paymentRefundRepository.releaseClaim(claim);
         }
+    }
+
+    private PaymentRefundRecovery afterResultQuery(PaymentRefund refund, String fallbackReason) {
+        PaymentRefundRecovery previous = refund.recovery();
+        // 결과 조회는 재전송 횟수도, 이전 전송 종료 시각 기준 예약도 바꾸지 않는다.
+        return new PaymentRefundRecovery(previous.category() == null
+                ? RefundRecoveryCategory.RESULT_CONFIRMATION_REQUIRED : previous.category(),
+                previous.errorCode(), previous.retryCount(), previous.nextRetryAt(),
+                previous.stopReason() == null ? fallbackReason : previous.stopReason());
     }
 
     private PaymentConfirmResponse toConfirmResponse(PaymentOutcome outcome) {

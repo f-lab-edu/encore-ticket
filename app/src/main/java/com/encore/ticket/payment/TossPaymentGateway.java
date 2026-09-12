@@ -111,25 +111,35 @@ public class TossPaymentGateway implements PaymentGateway {
                     .body(TossPayment.class);
             return toCancellation(response, paymentKey, amount);
         } catch (TossHttpException exception) {
-            if (exception.code.contains("ALREADY_CANCELED")) {
-                return queryCancellation(paymentKey, amount);
+            if ("ALREADY_CANCELED_PAYMENT".equals(exception.code)
+                    || "ALREADY_REFUND_PAYMENT".equals(exception.code)) {
+                PaymentCancellation queried = queryCancellation(paymentKey, amount);
+                if (!queried.isCompleted()) {
+                    throw new PaymentGatewayException("기존 환불 완료를 확인할 수 없습니다");
+                }
+                return queried;
             }
-            if (isIndeterminate(exception)) {
-                throw new PaymentGatewayException("Toss 환불 결과를 확인할 수 없습니다", exception);
-            }
-            return PaymentCancellation.failed(paymentKey, exception.code, exception.getMessage());
+            return PaymentCancellation.failed(paymentKey, exception.code, exception.getMessage(),
+                    TossRefundErrorClassifier.classify(exception.status, exception.code));
         } catch (RestClientException exception) {
             throw new PaymentGatewayException("Toss 환불 결과를 확인할 수 없습니다", exception);
         }
     }
 
-    private PaymentCancellation queryCancellation(String paymentKey, Long amount) {
+    @Override
+    public PaymentCancellation queryCancellation(String paymentKey, Long amount) {
+        requireConfigured();
         try {
             TossPayment response = client.get()
                     .uri("/v1/payments/{paymentKey}", paymentKey)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, this::throwHttpError)
                     .body(TossPayment.class);
+            if (response != null && paymentKey.equals(response.paymentKey())
+                    && amount.equals(response.totalAmount()) && "DONE".equals(response.status())
+                    && (response.cancels() == null || response.cancels().isEmpty())) {
+                return PaymentCancellation.notCanceled(paymentKey);
+            }
             return toCancellation(response, paymentKey, amount);
         } catch (TossHttpException | RestClientException exception) {
             throw new PaymentGatewayException("Toss 환불 상태를 확인할 수 없습니다", exception);
@@ -192,8 +202,10 @@ public class TossPaymentGateway implements PaymentGateway {
             case "ABORTED", "EXPIRED" -> PaymentApproval.declined(
                     payment.paymentKey(), payment.orderId(), payment.totalAmount(),
                     payment.status(), payment.status());
-            case "READY", "IN_PROGRESS" -> PaymentApproval.pending(
+            case "READY" -> PaymentApproval.pending(
                     payment.paymentKey(), payment.orderId(), payment.totalAmount(), payment.status());
+            case "IN_PROGRESS" -> PaymentApproval.awaitingApproval(
+                    payment.paymentKey(), payment.orderId(), payment.totalAmount());
             case "CANCELED" -> PaymentApproval.canceled(
                     payment.paymentKey(), payment.orderId(), payment.totalAmount(), payment.status());
             default -> throw new PaymentGatewayException(

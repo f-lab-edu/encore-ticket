@@ -13,6 +13,7 @@ import com.encore.ticket.core.payment.port.PaymentStartResult;
 import com.encore.ticket.storage.db.support.MySqlContainerConfig;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -180,7 +181,7 @@ class PaymentRepositoryTransactionTest {
         PaymentStartResult first = startPending(98010L);
         PaymentStartResult second = startPending(98011L);
         PaymentStartResult third = startPending(98012L);
-        OffsetDateTime cutoff = OffsetDateTime.now().minusSeconds(1);
+        OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1);
         jdbcTemplate.update("UPDATE payment SET created_at = ? WHERE id IN (?, ?, ?)",
                 cutoff.minusSeconds(10), first.payment().id(), second.payment().id(), third.payment().id());
 
@@ -190,7 +191,7 @@ class PaymentRepositoryTransactionTest {
         assertThat(paymentRepository.findPendingForRecovery(cutoff, 2))
                 .extracting(Payment::id)
                 .containsExactly(third.payment().id());
-        assertThat(paymentRepository.findPendingForRecovery(OffsetDateTime.now().plusSeconds(1), 2))
+        assertThat(paymentRepository.findPendingForRecovery(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(1), 2))
                 .extracting(Payment::id)
                 .containsExactly(first.payment().id(), second.payment().id());
     }
@@ -200,17 +201,17 @@ class PaymentRepositoryTransactionTest {
         PaymentStartResult first = startExpiredAndSettle(98020L);
         PaymentStartResult second = startExpiredAndSettle(98021L);
         PaymentStartResult third = startExpiredAndSettle(98022L);
-        OffsetDateTime cutoff = OffsetDateTime.now().minusSeconds(1);
+        OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1);
         jdbcTemplate.update("UPDATE payment_refund SET created_at = ? WHERE payment_id IN (?, ?, ?)",
                 cutoff.minusSeconds(10), first.payment().id(), second.payment().id(), third.payment().id());
 
-        var refunds = paymentRefundRepository.findPendingForRecovery(cutoff, 2);
+        var refunds = paymentRefundRepository.findForResultRecovery(cutoff, 2);
         assertThat(refunds).extracting(refund -> refund.paymentId())
                 .containsExactly(first.payment().id(), second.payment().id());
-        assertThat(paymentRefundRepository.findPendingForRecovery(cutoff, 2))
+        assertThat(paymentRefundRepository.findForResultRecovery(cutoff, 2))
                 .extracting(refund -> refund.paymentId())
                 .containsExactly(third.payment().id());
-        assertThat(paymentRefundRepository.findPendingForRecovery(OffsetDateTime.now().plusSeconds(1), 2))
+        assertThat(paymentRefundRepository.findForResultRecovery(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(1), 2))
                 .extracting(refund -> refund.paymentId())
                 .containsExactly(first.payment().id(), second.payment().id());
     }
@@ -249,7 +250,7 @@ class PaymentRepositoryTransactionTest {
     }
 
     private void insertReservation(long id, ReservationStatus status) {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         jdbcTemplate.update("""
                 INSERT INTO reservation (
                     id, member_id, schedule_id, hold_id, amount, status,

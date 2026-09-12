@@ -1,7 +1,11 @@
 package com.encore.ticket.storage.db.payment;
 
 import com.encore.ticket.core.payment.dto.PaymentRefundStatus;
+import com.encore.ticket.core.payment.domain.PaymentRefundRecovery;
+import com.encore.ticket.core.payment.domain.PaymentRefundAttention;
+import com.encore.ticket.core.payment.dto.RefundRecoveryCategory;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -35,22 +39,100 @@ public class PaymentRefundEntity {
     private OffsetDateTime completedAt;
     private String failureReason;
 
+    @Enumerated(EnumType.STRING)
+    private RefundRecoveryCategory recoveryCategory;
+    @Column(name = "recovery_error_code")
+    private String recoveryErrorCode;
+    private int retryCount;
+    @Column(name = "next_retry_at")
+    private OffsetDateTime nextRetryAt;
+    private String recoveryStopReason;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentRefundAttention.Reason attentionReason;
+    @Column(name = "attention_since")
+    private OffsetDateTime attentionSince;
+    @Column(name = "attention_resolved_at")
+    private OffsetDateTime attentionResolvedAt;
+
+    private String executionToken;
+    private OffsetDateTime executionUntil;
+    private OffsetDateTime requestStartedAt;
     private OffsetDateTime lastRecoveryAt;
 
-    void markRecovery(OffsetDateTime at) {
-        this.lastRecoveryAt = at;
+    boolean refreshAttention(OffsetDateTime now) {
+        PaymentRefundAttention.Reason next = null;
+        if (status != PaymentRefundStatus.COMPLETED) {
+            if (retryCount >= 5) {
+                next = PaymentRefundAttention.Reason.RETRY_LIMIT_REACHED;
+            } else if (recoveryCategory == RefundRecoveryCategory.CORRECTION_OR_REVIEW_REQUIRED) {
+                next = PaymentRefundAttention.Reason.CORRECTION_OR_REVIEW_REQUIRED;
+            } else if (recoveryCategory == RefundRecoveryCategory.AUTOMATIC_RECOVERY_CANDIDATE
+                    && recoveryStopReason != null) {
+                next = PaymentRefundAttention.Reason.REEXECUTION_REVIEW_REQUIRED;
+            } else if (recoveryCategory == RefundRecoveryCategory.RESULT_CONFIRMATION_REQUIRED
+                    || status == PaymentRefundStatus.FAILED || recoveryStopReason != null) {
+                next = PaymentRefundAttention.Reason.RESULT_CONFIRMATION_REQUIRED;
+            }
+        }
+        if (next == attentionReason) {
+            return false;
+        }
+        if (next == null) {
+            attentionResolvedAt = now;
+        } else if (attentionReason == null) {
+            attentionSince = now;
+            attentionResolvedAt = null;
+        }
+        attentionReason = next;
+        return true;
     }
 
-    void complete(OffsetDateTime at) {
-        if (status == PaymentRefundStatus.COMPLETED) {
-            return;
+    boolean claim(String token, OffsetDateTime now, OffsetDateTime until) {
+        if (status == PaymentRefundStatus.COMPLETED
+                || executionToken != null && executionUntil != null && executionUntil.isAfter(now)) {
+            return false;
         }
-        if (status != PaymentRefundStatus.PENDING) {
-            throw new IllegalStateException("대기 중인 환불만 완료할 수 있습니다: " + id);
+        executionToken = token;
+        executionUntil = until;
+        return true;
+    }
+
+    boolean ownsClaim(String token, OffsetDateTime now) {
+        return token.equals(executionToken) && executionUntil != null && executionUntil.isAfter(now);
+    }
+
+    boolean markRequestStarted(OffsetDateTime now) {
+        if (status != PaymentRefundStatus.PENDING || requestStartedAt != null || retryCount != 0) {
+            return false;
         }
+        requestStartedAt = now;
+        return true;
+    }
+
+    void releaseClaim(String token) {
+        if (token.equals(executionToken)) {
+            executionToken = null;
+            executionUntil = null;
+        }
+    }
+
+    void confirmRefund(OffsetDateTime at) {
         status = PaymentRefundStatus.COMPLETED;
         completedAt = at;
         failureReason = null;
+    }
+
+    void updateRecovery(PaymentRefundRecovery recovery) {
+        recoveryCategory = recovery.category();
+        recoveryErrorCode = recovery.errorCode();
+        retryCount = recovery.retryCount();
+        nextRetryAt = recovery.nextRetryAt();
+        recoveryStopReason = recovery.stopReason();
+    }
+
+    void markRecovery(OffsetDateTime at) {
+        this.lastRecoveryAt = at;
     }
 
     void fail(String failure) {

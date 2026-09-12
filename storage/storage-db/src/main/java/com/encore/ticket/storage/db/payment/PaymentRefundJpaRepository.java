@@ -16,20 +16,25 @@ interface PaymentRefundJpaRepository extends JpaRepository<PaymentRefundEntity, 
     Optional<PaymentRefundEntity> findByPaymentId(Long paymentId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from PaymentRefundEntity r where r.paymentId = :paymentId")
+    Optional<PaymentRefundEntity> findByPaymentIdForUpdate(@Param("paymentId") Long paymentId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from PaymentRefundEntity r where r.idempotencyKey = :key")
     Optional<PaymentRefundEntity> findByIdempotencyKeyForUpdate(@Param("key") String key);
 
     @Query(value = """
             SELECT *
             FROM payment_refund
-            WHERE status = 'PENDING'
+            WHERE status IN ('PENDING', 'FAILED')
+              AND (execution_token IS NULL OR execution_until IS NULL OR execution_until <= :now)
               AND created_at <= :before
               AND (last_recovery_at IS NULL OR last_recovery_at <= :before)
             ORDER BY COALESCE(last_recovery_at, created_at), id
             LIMIT :batchSize
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<PaymentRefundEntity> findPendingForUpdate(
-            @Param("before") OffsetDateTime before,
+    List<PaymentRefundEntity> findForResultRecovery(
+            @Param("before") OffsetDateTime before, @Param("now") OffsetDateTime now,
             @Param("batchSize") int batchSize);
 }
