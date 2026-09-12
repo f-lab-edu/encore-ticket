@@ -56,4 +56,17 @@ public class ReservationEntity {
     void changeStatus(ReservationStatus status) {
         this.status = status;
     }
+
+    public void startPayment(OffsetDateTime startedAt) {
+        this.paymentStartsAt = startedAt;
+    }
+
+    public void confirmPayment() {
+        this.status = ReservationStatus.CONFIRMED;
+        this.paymentStartsAt = null;
+    }
+
+    public void clearPaymentStart() {
+        this.paymentStartsAt = null;
+    }
 }

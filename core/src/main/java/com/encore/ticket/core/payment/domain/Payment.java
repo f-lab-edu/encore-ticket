@@ -10,7 +10,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Payment {
 
@@ -52,6 +52,10 @@ public class Payment {
         return status == PaymentStatus.FAILED;
     }
 
+    public boolean isCompleted() {
+        return status == PaymentStatus.COMPLETED;
+    }
+
     public boolean sameRequestAs(String orderId, Long amount) {
         return this.orderId.equals(orderId) && this.amount.equals(amount);
     }
@@ -59,4 +63,15 @@ public class Payment {
     public boolean boundToOtherKey(String paymentKey) {
         return !this.paymentKey.equals(paymentKey);
     }
+
+    public Payment complete(String method, OffsetDateTime approvedAt) {
+        if (!isPending()) throw new IllegalStateException("대기 중인 결제만 완료할 수 있습니다");
+        return toBuilder().status(PaymentStatus.COMPLETED).method(method).approvedAt(approvedAt).failReason(null).build();
+    }
+
+    public Payment fail(String reason) {
+        if (!isPending()) throw new IllegalStateException("대기 중인 결제만 실패 처리할 수 있습니다");
+        return toBuilder().status(PaymentStatus.FAILED).failReason(reason).build();
+    }
+
 }
