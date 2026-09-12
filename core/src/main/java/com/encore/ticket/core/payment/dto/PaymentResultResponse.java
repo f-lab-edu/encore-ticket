@@ -13,5 +13,8 @@ public record PaymentResultResponse(
         String reservationStatus,
         OffsetDateTime approvedAt,
         String holdId,
-        String failReason) {
+        String failReason,
+        PaymentRefundStatus refundStatus,
+        OffsetDateTime refundedAt,
+        String refundFailureReason) {
 }

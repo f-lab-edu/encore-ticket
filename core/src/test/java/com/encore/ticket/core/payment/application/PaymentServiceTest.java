@@ -1,27 +1,35 @@
 package com.encore.ticket.core.payment.application;
 
-import com.encore.ticket.core.payment.domain.ReservationCharge;
+import com.encore.ticket.core.booking.dto.ReservationStatus;
+import com.encore.ticket.core.booking.reservation.domain.Reservation;
+import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.payment.domain.Payment;
+import com.encore.ticket.core.payment.domain.PaymentRefund;
 import com.encore.ticket.core.payment.dto.PaymentConfirmResponse;
+import com.encore.ticket.core.payment.dto.PaymentRefundStatus;
 import com.encore.ticket.core.payment.dto.PaymentResultResponse;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
-import com.encore.ticket.core.payment.exception.AmountMismatchException;
-import com.encore.ticket.core.payment.exception.CancelledReservationException;
-import com.encore.ticket.core.payment.exception.ExpiredReservationException;
-import com.encore.ticket.core.payment.exception.OrderIdAlreadyBoundException;
-import com.encore.ticket.core.payment.exception.PaymentKeyReusedException;
+import com.encore.ticket.core.payment.exception.PaymentGatewayException;
 import com.encore.ticket.core.payment.exception.ReservationNotOwnedException;
-import com.encore.ticket.core.payment.exception.StalePaymentAttemptException;
+import com.encore.ticket.core.payment.port.PaymentApproval;
+import com.encore.ticket.core.payment.port.PaymentCancellation;
+import com.encore.ticket.core.payment.port.PaymentGateway;
+import com.encore.ticket.core.payment.port.PaymentRefundRepository;
+import com.encore.ticket.core.payment.port.PaymentRepository;
+import com.encore.ticket.core.payment.port.PaymentSettlementCommand;
+import com.encore.ticket.core.payment.port.PaymentSettlementResult;
+import com.encore.ticket.core.payment.port.PaymentStartCommand;
+import com.encore.ticket.core.payment.port.PaymentStartResult;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.time.Clock;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,225 +37,325 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import com.encore.ticket.core.payment.domain.Payment;
-import com.encore.ticket.core.payment.port.PaymentGateway;
-import com.encore.ticket.core.payment.port.PaymentRepository;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
-
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-08-04T10:00:00Z"), ZoneOffset.UTC);
 
     private static final String PAYMENT_KEY = "tgen_key";
     private static final String ORDER_ID = "reservation-501-1";
     private static final long AMOUNT = 330_000L;
     private static final long RESERVATION_ID = 501L;
     private static final long MEMBER_ID = 100L;
-    private static final long OTHER_MEMBER_ID = 200L;
     private static final String HOLD_ID = "hold_7f32";
+    private static final OffsetDateTime APPROVED_AT =
+            OffsetDateTime.parse("2026-08-04T09:58:00Z");
 
     @Mock PaymentRepository paymentRepository;
+    @Mock PaymentRefundRepository paymentRefundRepository;
+    @Mock ReservationRepository reservationRepository;
     @Mock PaymentGateway paymentGateway;
 
     PaymentService service;
 
     @BeforeEach
     void setUp() {
-        service = new PaymentService(paymentRepository, paymentGateway, CLOCK);
-    }
-
-    private ReservationCharge charge() {
-        return new ReservationCharge(
-                RESERVATION_ID, MEMBER_ID, AMOUNT, ORDER_ID, HOLD_ID, false,
-                OffsetDateTime.parse("2026-08-04T10:05:00Z"));
-    }
-
-    @Test
-    void 처음_승인_요청하면_PG에_접수하고_PENDING_을_반환한다() {
-        PaymentConfirmResponse response =
-                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge());
-
-        assertThat(response.paymentKey()).isEqualTo(PAYMENT_KEY);
-        assertThat(response.orderId()).isEqualTo(ORDER_ID);
-        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(response.approvedAt()).isNull();
-
-        verify(paymentGateway).requestApproval(PAYMENT_KEY, ORDER_ID, AMOUNT);
-        verify(paymentRepository).save(any());
+        service = new PaymentService(
+                paymentRepository,
+                paymentRefundRepository,
+                reservationRepository,
+                paymentGateway);
     }
 
     @Test
-    void 같은_요청을_다시_보내면_PG를_다시_부르지_않고_기존_결과를_반환한다() {
-        Payment completed = payment(PaymentStatus.COMPLETED, "CARD",
-                OffsetDateTime.parse("2026-08-04T09:58:00Z"), null);
-        given(paymentRepository.findByPaymentKey(PAYMENT_KEY)).willReturn(Optional.of(completed));
+    void 새_결제는_PENDING을_저장한_뒤_PG를_승인하고_예매_확정으로_수렴한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        Payment completed = completedPayment();
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.started(pending));
+        given(paymentGateway.approve(PAYMENT_KEY, ORDER_ID, AMOUNT))
+                .willReturn(approved());
+        given(paymentRepository.settle(any(PaymentSettlementCommand.class)))
+                .willReturn(PaymentSettlementResult.confirmed(completed));
+        given(paymentRefundRepository.findByPaymentId(completed.id())).willReturn(Optional.empty());
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.CONFIRMED)));
 
         PaymentConfirmResponse response =
-                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge());
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
 
         assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
-        assertThat(response.reservationId()).isEqualTo(RESERVATION_ID);
-        assertThat(response.method()).isEqualTo("CARD");
-        assertThat(response.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-08-04T09:58:00Z"));
-
-        verify(paymentGateway, never()).requestApproval(any(), any(), any());
-        verify(paymentRepository, never()).save(any());
+        assertThat(response.reservationStatus()).isEqualTo("CONFIRMED");
+        assertThat(response.refundStatus()).isNull();
+        verify(paymentGateway).approve(PAYMENT_KEY, ORDER_ID, AMOUNT);
+        verify(paymentGateway, never()).query(any());
     }
 
     @Test
-    void 같은_결제키를_다른_주문에_쓰면_실패한다() {
-        Payment other = Payment.builder()
-                .paymentKey(PAYMENT_KEY).orderId("reservation-999-1").amount(AMOUNT)
-                .reservationId(999L).memberId(MEMBER_ID).holdId(HOLD_ID)
-                .status(PaymentStatus.PENDING).build();
-        given(paymentRepository.findByPaymentKey(PAYMENT_KEY)).willReturn(Optional.of(other));
+    void 기존_PENDING_재요청은_승인을_반복하지_않고_PG를_조회해_복구한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        Payment completed = completedPayment();
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.replayed(pending));
+        given(paymentGateway.query(PAYMENT_KEY)).willReturn(approved());
+        given(paymentRepository.settle(any(PaymentSettlementCommand.class)))
+                .willReturn(PaymentSettlementResult.confirmed(completed));
+        given(paymentRefundRepository.findByPaymentId(completed.id())).willReturn(Optional.empty());
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.CONFIRMED)));
 
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge()))
-                .isInstanceOf(PaymentKeyReusedException.class);
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
 
-        verify(paymentRepository, never()).save(any());
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
+        verify(paymentGateway).query(PAYMENT_KEY);
+        verify(paymentGateway, never()).approve(any(), any(), any());
     }
 
     @Test
-    void 같은_주문이_다른_결제키에_이미_묶였으면_실패한다() {
-        Payment bound = Payment.builder()
-                .paymentKey("tgen_other").orderId(ORDER_ID).amount(AMOUNT)
-                .reservationId(RESERVATION_ID).memberId(MEMBER_ID).holdId(HOLD_ID)
-                .status(PaymentStatus.PENDING).build();
-        given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(bound));
+    void PG_승인_결과가_불명확하면_실패로_바꾸지_않고_PENDING을_반환한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.started(pending));
+        given(paymentGateway.approve(PAYMENT_KEY, ORDER_ID, AMOUNT))
+                .willThrow(new PaymentGatewayException("timeout"));
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.PENDING_PAYMENT)));
 
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, charge()))
-                .isInstanceOf(OrderIdAlreadyBoundException.class);
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
 
-        verify(paymentRepository, never()).save(any());
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(paymentRepository, never()).decline(any(), any(), any());
+        verify(paymentRepository, never()).settle(any());
     }
 
     @Test
-    void 다른_사용자의_예매를_결제하면_실패한다() {
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, OTHER_MEMBER_ID, charge()))
+    void PG_금액이_다르면_예매_확정이나_실패로_단정하지_않는다() {
+        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(payment(PaymentStatus.PENDING));
+        given(paymentGateway.query(PAYMENT_KEY)).willReturn(PaymentApproval.approved(
+                PAYMENT_KEY, ORDER_ID, AMOUNT + 1, "CARD", APPROVED_AT));
+
+        PaymentResultResponse result = service.result(ORDER_ID, MEMBER_ID);
+
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(paymentRepository, never()).settle(any());
+        verify(paymentRepository, never()).decline(any(), any(), any());
+    }
+
+    @Test
+    void PG가_명확히_거절하면_PAYMENT를_FAILED로_기록한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        Payment failed = pending.fail("카드 한도 초과");
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.started(pending));
+        given(paymentGateway.approve(PAYMENT_KEY, ORDER_ID, AMOUNT))
+                .willReturn(PaymentApproval.declined(
+                        PAYMENT_KEY, ORDER_ID, AMOUNT, "REJECT_CARD_PAYMENT", "카드 한도 초과"));
+        given(paymentRepository.decline(PAYMENT_KEY, ORDER_ID, "카드 한도 초과"))
+                .willReturn(failed);
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.PENDING_PAYMENT)));
+
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
+
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.FAILED);
+        verify(paymentRepository, never()).settle(any());
+    }
+
+    @Test
+    void 이미_FAILED인_같은_요청은_PG를_호출하지_않고_기존_결과를_반환한다() {
+        Payment failed = payment(PaymentStatus.PENDING).fail("카드 한도 초과");
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.replayed(failed));
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.PENDING_PAYMENT)));
+
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
+
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.FAILED);
+        verify(paymentGateway, never()).approve(any(), any(), any());
+        verify(paymentGateway, never()).query(any());
+    }
+
+    @Test
+    void PG는_승인했지만_예매를_확정할_수_없으면_환불_PENDING을_노출한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        Payment completed = completedPayment();
+        PaymentRefund refund = pendingRefund(completed);
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.started(pending));
+        given(paymentGateway.approve(PAYMENT_KEY, ORDER_ID, AMOUNT)).willReturn(approved());
+        given(paymentRepository.settle(any(PaymentSettlementCommand.class)))
+                .willReturn(PaymentSettlementResult.refundRequired(completed, refund));
+        given(paymentRefundRepository.findByPaymentId(completed.id()))
+                .willReturn(Optional.of(refund));
+        given(paymentGateway.cancel(PAYMENT_KEY, AMOUNT, refund.reason(), refund.idempotencyKey()))
+                .willThrow(new PaymentGatewayException("timeout"));
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.EXPIRED)));
+
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
+
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
+        assertThat(response.reservationStatus()).isEqualTo("EXPIRED");
+        assertThat(response.refundStatus()).isEqualTo(PaymentRefundStatus.PENDING);
+        verify(paymentRefundRepository, never()).fail(any(), any());
+    }
+
+    @Test
+    void 자동_환불이_완료되면_승인_사실과_환불_완료를_함께_반환한다() {
+        Payment completed = completedPayment();
+        PaymentRefund pendingRefund = pendingRefund(completed);
+        PaymentRefund completedRefund = pendingRefund.complete(APPROVED_AT.plusMinutes(1));
+        given(paymentRepository.start(any(PaymentStartCommand.class)))
+                .willReturn(PaymentStartResult.replayed(completed));
+        given(paymentRefundRepository.findByPaymentId(completed.id()))
+                .willReturn(Optional.of(pendingRefund));
+        given(paymentGateway.cancel(
+                PAYMENT_KEY, AMOUNT, pendingRefund.reason(), pendingRefund.idempotencyKey()))
+                .willReturn(PaymentCancellation.completed(
+                        PAYMENT_KEY, AMOUNT, completedRefund.completedAt()));
+        given(paymentRefundRepository.complete(pendingRefund, completedRefund.completedAt()))
+                .willReturn(completedRefund);
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.CANCELLED)));
+
+        PaymentConfirmResponse response =
+                service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID);
+
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
+        assertThat(response.reservationStatus()).isEqualTo("CANCELLED");
+        assertThat(response.refundStatus()).isEqualTo(PaymentRefundStatus.COMPLETED);
+        assertThat(response.refundedAt()).isEqualTo(completedRefund.completedAt());
+    }
+
+    @Test
+    void 결과_조회는_PENDING을_PG_조회로_즉시_복구한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        Payment completed = completedPayment();
+        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(pending);
+        given(paymentGateway.query(PAYMENT_KEY)).willReturn(approved());
+        given(paymentRepository.settle(any(PaymentSettlementCommand.class)))
+                .willReturn(PaymentSettlementResult.confirmed(completed));
+        given(paymentRefundRepository.findByPaymentId(completed.id())).willReturn(Optional.empty());
+        given(reservationRepository.findById(RESERVATION_ID)).willReturn(Optional.of(reservation(
+                ReservationStatus.CONFIRMED)));
+
+        PaymentResultResponse response = service.result(ORDER_ID, MEMBER_ID);
+
+        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
+        assertThat(response.reservationStatus()).isEqualTo("CONFIRMED");
+        assertThat(response.pollAfterSeconds()).isNull();
+    }
+
+    @Test
+    void 다른_사용자의_결제는_PG를_조회하기_전에_차단한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(pending);
+
+        assertThatThrownBy(() -> service.result(ORDER_ID, MEMBER_ID + 1))
                 .isInstanceOf(ReservationNotOwnedException.class);
 
-        verify(paymentRepository, never()).save(any());
+        verify(paymentGateway, never()).query(any());
     }
 
     @Test
-    void 취소된_예매를_결제하면_실패한다() {
-        ReservationCharge cancelled = new ReservationCharge(
-                RESERVATION_ID, MEMBER_ID, AMOUNT, ORDER_ID, HOLD_ID, true,
-                OffsetDateTime.parse("2026-08-04T10:05:00Z"));
+    void 스케줄러_복구는_저장된_PENDING만_PG에_조회한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        OffsetDateTime cutoff = OffsetDateTime.parse("2026-08-04T10:00:00Z");
+        given(paymentRepository.findPendingForRecovery(cutoff, 20))
+                .willReturn(List.of(pending));
+        given(paymentGateway.query(PAYMENT_KEY)).willReturn(PaymentApproval.pending(
+                PAYMENT_KEY, ORDER_ID, AMOUNT, "IN_PROGRESS"));
 
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, cancelled))
-                .isInstanceOf(CancelledReservationException.class);
+        int recovered = service.recoverPending(cutoff, 20);
 
-        verify(paymentRepository, never()).save(any());
+        assertThat(recovered).isEqualTo(1);
+        verify(paymentGateway).query(PAYMENT_KEY);
+        verify(paymentRepository, never()).settle(any());
+        verify(paymentRepository, never()).decline(any(), any(), any());
     }
 
     @Test
-    void 만료_시각에_도달한_예매를_결제하면_실패한다() {
-        ReservationCharge expired = new ReservationCharge(
-                RESERVATION_ID, MEMBER_ID, AMOUNT, ORDER_ID, HOLD_ID, false,
-                OffsetDateTime.parse("2026-08-04T10:00:00Z"));
+    void 한_결제의_DB_복구가_실패해도_다음_결제를_처리한다() {
+        Payment pending = payment(PaymentStatus.PENDING);
+        OffsetDateTime cutoff = APPROVED_AT;
+        given(paymentRepository.findPendingForRecovery(cutoff, 20))
+                .willReturn(List.of(pending, pending));
+        given(paymentGateway.query(PAYMENT_KEY)).willReturn(approved());
+        given(paymentRepository.settle(any()))
+                .willThrow(new IllegalStateException("DB 복구 실패"))
+                .willReturn(PaymentSettlementResult.confirmed(completedPayment()));
 
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, expired))
-                .isInstanceOf(ExpiredReservationException.class);
+        assertThat(service.recoverPending(cutoff, 20)).isEqualTo(2);
 
-        verify(paymentRepository, never()).save(any());
+        verify(paymentRepository, org.mockito.Mockito.times(2)).settle(any());
+        verify(paymentRefundRepository).findByPaymentId(pending.id());
     }
 
     @Test
-    void 오래된_주문으로_결제하면_실패한다() {
-        ReservationCharge renewed = new ReservationCharge(
-                RESERVATION_ID, MEMBER_ID, AMOUNT, "reservation-501-2", HOLD_ID, false,
-                OffsetDateTime.parse("2026-08-04T10:05:00Z"));
+    void 한_환불의_DB_복구가_실패해도_다음_환불을_처리한다() {
+        PaymentRefund refund = pendingRefund(completedPayment());
+        given(paymentRefundRepository.findPendingForRecovery(APPROVED_AT, 20))
+                .willReturn(List.of(refund, refund));
+        given(paymentGateway.cancel(any(), any(), any(), any()))
+                .willReturn(PaymentCancellation.completed(PAYMENT_KEY, AMOUNT, APPROVED_AT));
+        given(paymentRefundRepository.complete(refund, APPROVED_AT))
+                .willThrow(new IllegalStateException("DB 복구 실패"))
+                .willReturn(refund);
 
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT, MEMBER_ID, renewed))
-                .isInstanceOf(StalePaymentAttemptException.class);
+        assertThat(service.recoverRefunds(APPROVED_AT, 20)).isEqualTo(2);
 
-        verify(paymentRepository, never()).save(any());
+        verify(paymentRefundRepository, org.mockito.Mockito.times(2)).complete(refund, APPROVED_AT);
     }
 
-    @Test
-    void 요청_금액이_예매_금액과_다르면_실패한다() {
-        assertThatThrownBy(() -> service.confirm(PAYMENT_KEY, ORDER_ID, AMOUNT + 1, MEMBER_ID, charge()))
-                .isInstanceOf(AmountMismatchException.class);
-
-        verify(paymentRepository, never()).save(any());
-    }
-
-    private Payment payment(PaymentStatus status, String method, OffsetDateTime approvedAt, String failReason) {
+    private static Payment payment(PaymentStatus status) {
         return Payment.builder()
-                .paymentKey(PAYMENT_KEY).orderId(ORDER_ID).amount(AMOUNT)
-                .reservationId(RESERVATION_ID).memberId(MEMBER_ID).holdId(HOLD_ID)
-                .status(status).method(method).approvedAt(approvedAt).failReason(failReason)
+                .id(700L)
+                .paymentKey(PAYMENT_KEY)
+                .orderId(ORDER_ID)
+                .amount(AMOUNT)
+                .reservationId(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .holdId(HOLD_ID)
+                .status(status)
                 .build();
     }
 
-    private void givenStored(PaymentStatus status, String method, OffsetDateTime approvedAt, String failReason) {
-        given(paymentRepository.getByOrderId(ORDER_ID)).willReturn(payment(status, method, approvedAt, failReason));
+    private static Payment completedPayment() {
+        return payment(PaymentStatus.PENDING).complete("CARD", APPROVED_AT);
     }
 
-    @Test
-    void 처리_중인_결제_결과는_폴링_간격만_담는다() {
-        givenStored(PaymentStatus.PENDING, null, null, null);
-
-        PaymentResultResponse response = service.result(ORDER_ID, MEMBER_ID, null);
-
-        assertThat(response.paymentKey()).isEqualTo(PAYMENT_KEY);
-        assertThat(response.orderId()).isEqualTo(ORDER_ID);
-        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(response.pollAfterSeconds()).isEqualTo(2);
-
-        assertThat(response.reservationId()).isNull();
-        assertThat(response.amount()).isNull();
-        assertThat(response.method()).isNull();
-        assertThat(response.reservationStatus()).isNull();
-        assertThat(response.approvedAt()).isNull();
-        assertThat(response.holdId()).isNull();
-        assertThat(response.failReason()).isNull();
+    private static PaymentRefund pendingRefund(Payment payment) {
+        return PaymentRefund.builder()
+                .id(900L)
+                .paymentId(payment.id())
+                .paymentKey(payment.paymentKey())
+                .idempotencyKey("refund-" + payment.paymentKey())
+                .amount(payment.amount())
+                .status(PaymentRefundStatus.PENDING)
+                .reason("예매 확정 불가 자동 환불")
+                .build();
     }
 
-    @Test
-    void 완료된_결제_결과는_금액과_수단과_예매_상태를_담는다() {
-        OffsetDateTime approvedAt = OffsetDateTime.parse("2026-08-04T09:58:00Z");
-        givenStored(PaymentStatus.COMPLETED, "CARD", approvedAt, null);
-
-        PaymentResultResponse response = service.result(ORDER_ID, MEMBER_ID, "CONFIRMED");
-
-        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.COMPLETED);
-        assertThat(response.reservationId()).isEqualTo(RESERVATION_ID);
-        assertThat(response.amount()).isEqualTo(AMOUNT);
-        assertThat(response.method()).isEqualTo("CARD");
-        assertThat(response.reservationStatus()).isEqualTo("CONFIRMED");
-        assertThat(response.approvedAt()).isEqualTo(approvedAt);
-
-        assertThat(response.pollAfterSeconds()).isNull();
-        assertThat(response.holdId()).isNull();
-        assertThat(response.failReason()).isNull();
+    private static PaymentApproval approved() {
+        return PaymentApproval.approved(
+                PAYMENT_KEY, ORDER_ID, AMOUNT, "CARD", APPROVED_AT);
     }
 
-    @Test
-    void 실패한_결제_결과는_실패_사유와_재결제용_선점_ID를_담는다() {
-        givenStored(PaymentStatus.FAILED, null, null, "카드 한도 초과");
-
-        PaymentResultResponse response = service.result(ORDER_ID, MEMBER_ID, "PENDING_PAYMENT");
-
-        assertThat(response.paymentStatus()).isEqualTo(PaymentStatus.FAILED);
-        assertThat(response.reservationId()).isEqualTo(RESERVATION_ID);
-        assertThat(response.holdId()).isEqualTo(HOLD_ID);
-        assertThat(response.failReason()).isEqualTo("카드 한도 초과");
-
-        assertThat(response.pollAfterSeconds()).isNull();
-        assertThat(response.amount()).isNull();
-        assertThat(response.method()).isNull();
-        assertThat(response.reservationStatus()).isNull();
-        assertThat(response.approvedAt()).isNull();
-    }
-
-    @Test
-    void 다른_사용자의_결제_결과를_조회하면_실패한다() {
-        givenStored(PaymentStatus.COMPLETED, "CARD", OffsetDateTime.parse("2026-08-04T09:58:00Z"), null);
-
-        assertThatThrownBy(() -> service.result(ORDER_ID, OTHER_MEMBER_ID, "CONFIRMED"))
-                .isInstanceOf(ReservationNotOwnedException.class);
+    private static Reservation reservation(ReservationStatus status) {
+        return Reservation.builder()
+                .id(RESERVATION_ID)
+                .memberId(MEMBER_ID)
+                .scheduleId(10L)
+                .seatIds(List.of(1L))
+                .holdId(HOLD_ID)
+                .amount(AMOUNT)
+                .status(status)
+                .paymentAttemptNo(1)
+                .build();
     }
 }

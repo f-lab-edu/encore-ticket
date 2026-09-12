@@ -10,5 +10,8 @@ public record PaymentConfirmResponse(
         Long amount,
         String method,
         String reservationStatus,
-        OffsetDateTime approvedAt) {
+        OffsetDateTime approvedAt,
+        PaymentRefundStatus refundStatus,
+        OffsetDateTime refundedAt,
+        String refundFailureReason) {
 }

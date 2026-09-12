@@ -36,12 +36,12 @@ class CoreServiceBeanTest extends ApiSpecTestSupport {
         assertThat(context.getBeanNamesForType(ConcertQueryService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(ConcertLikeService.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(PaymentQueryService.class)).hasSize(1);
+        assertThat(context.getBeanNamesForType(PaymentService.class)).hasSize(1);
     }
 
     @Test
     void 구현이_없는_포트에_의존하는_셋은_빈이_아니다() {
         assertThat(context.getBeanNamesForType(TokenService.class)).isEmpty();
-        assertThat(context.getBeanNamesForType(PaymentService.class)).isEmpty();
         assertThat(context.getBeanNamesForType(ConcertRankingService.class)).isEmpty();
     }
 }
