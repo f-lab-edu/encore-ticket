@@ -1,6 +1,8 @@
 package com.encore.ticket.booking.controller;
 
 import com.encore.ticket.ApiSpecTestSupport;
+import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.queue.port.QueueRepository;
 import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
@@ -16,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.jdbc.Sql;
 
 import java.time.OffsetDateTime;
@@ -29,6 +32,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 @Sql(scripts = "/sql/seat-hold-fixture.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@TestPropertySource(properties = "ticket.queue.admission.scheduler-enabled=false")
 class SeatHoldApiControllerTest extends ApiSpecTestSupport {
 
     private static final String QUEUE_TOKEN_HEADER = "X-Queue-Token";
@@ -54,6 +58,9 @@ class SeatHoldApiControllerTest extends ApiSpecTestSupport {
 
     @Autowired
     SeatHoldRepository seatHoldRepository;
+
+    @Autowired
+    QueueRepository queueRepository;
 
     @Test
     void 좌석을_선점하면_201과_스펙에_정의된_5개_필드를_반환한다() {
@@ -268,10 +275,32 @@ class SeatHoldApiControllerTest extends ApiSpecTestSupport {
 
     @Test
     void 입장_허용되지_않은_토큰으로_선점하면_403과_QUEUE_NOT_ADMITTED를_반환한다() {
+        String queueToken = queueRepository.enterOrResume(
+                SCHEDULE_ID, 1L, OffsetDateTime.now(clock)).token().token();
+
+        assertThat(queueRepository.findByToken(SCHEDULE_ID, queueToken))
+                .hasValueSatisfying(token -> assertThat(token.status()).isEqualTo(QueueStatus.WAITING));
+
         RestAssured
                 .given().spec(spec)
                     .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                    .header(QUEUE_TOKEN_HEADER, "q_waiting")
+                    .header(QUEUE_TOKEN_HEADER, queueToken)
+                    .header(IDEMPOTENCY_KEY_HEADER, "idem-1")
+                    .body(holdBody(List.of(SEAT_1)))
+                .when()
+                    .post("/reservations/holds")
+                .then()
+                    .statusCode(403)
+                    .contentType(PROBLEM_JSON)
+                    .body("code", equalTo("QUEUE_NOT_ADMITTED"));
+    }
+
+    @Test
+    void 없는_토큰으로_선점하면_403과_QUEUE_NOT_ADMITTED를_반환한다() {
+        RestAssured
+                .given().spec(spec)
+                    .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
+                    .header(QUEUE_TOKEN_HEADER, "q_unknown")
                     .header(IDEMPOTENCY_KEY_HEADER, "idem-1")
                     .body(holdBody(List.of(SEAT_1)))
                 .when()

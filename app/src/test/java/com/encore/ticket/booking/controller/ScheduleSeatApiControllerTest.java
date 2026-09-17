@@ -5,6 +5,8 @@ import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 import com.encore.ticket.core.booking.dto.SeatStatus;
+import com.encore.ticket.core.booking.dto.QueueStatus;
+import com.encore.ticket.core.booking.queue.port.QueueRepository;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
@@ -13,7 +15,9 @@ import org.assertj.core.api.SoftAssertions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.TestPropertySource;
 
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 
 @Sql(scripts = "/sql/seat-map-fixture.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@TestPropertySource(properties = "ticket.queue.admission.scheduler-enabled=false")
 class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
 
     private static final String QUEUE_TOKEN_HEADER = "X-Queue-Token";
@@ -44,6 +49,9 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
 
     @Autowired
     SeatHoldRepository seatHoldRepository;
+
+    @Autowired
+    QueueRepository queueRepository;
 
     @Test
     void 좌석_배치도를_조회하면_200과_스펙에_정의된_2개_필드를_반환한다() {
@@ -130,11 +138,17 @@ class ScheduleSeatApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
-    void 입장_허용되지_않은_토큰으로_조회하면_403과_QUEUE_NOT_ADMITTED를_반환한다() {
+    void 실제_WAITING_토큰으로_조회하면_403과_QUEUE_NOT_ADMITTED를_반환한다() {
+        String queueToken = queueRepository.enterOrResume(
+                SCHEDULE_ID, 1L, OffsetDateTime.now(clock)).token().token();
+
+        assertThat(queueRepository.findByToken(SCHEDULE_ID, queueToken))
+                .hasValueSatisfying(token -> assertThat(token.status()).isEqualTo(QueueStatus.WAITING));
+
         RestAssured
                 .given().spec(spec)
                 .header(HttpHeaders.AUTHORIZATION, BEARER_TOKEN)
-                .header(QUEUE_TOKEN_HEADER, "q_waiting")
+                .header(QUEUE_TOKEN_HEADER, queueToken)
             .when()
                 .get("/schedules/{scheduleId}/seats", SCHEDULE_ID)
                 .then()
