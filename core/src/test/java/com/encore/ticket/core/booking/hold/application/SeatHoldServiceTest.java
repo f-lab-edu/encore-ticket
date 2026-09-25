@@ -3,15 +3,20 @@ package com.encore.ticket.core.booking.hold.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +32,7 @@ import com.encore.ticket.core.booking.exception.SeatAlreadyHeldException;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquisition;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
 import com.encore.ticket.core.catalog.domain.SeatInfo;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
 import com.encore.ticket.core.exception.InvalidRequestFieldException;
@@ -53,11 +59,14 @@ class SeatHoldServiceTest {
     @Mock
     SeatCatalogReader seatCatalogReader;
 
+    @Mock
+    SeatAssignmentReader seatAssignmentReader;
+
     SeatHoldService service;
 
     @BeforeEach
     void setUp() {
-        service = new SeatHoldService(seatHoldRepository, seatCatalogReader, CLOCK);
+        service = new SeatHoldService(seatHoldRepository, seatCatalogReader, seatAssignmentReader, CLOCK);
     }
 
     @Test
@@ -73,6 +82,70 @@ class SeatHoldServiceTest {
         assertThat(result.response().seatIds()).containsExactly(1L, 2L);
         assertThat(result.response().totalAmount()).isEqualTo(240_000L);
         assertThat(result.response().expiresAt()).isEqualTo(EXPIRES_AT_IN_KST);
+    }
+
+    @Test
+    void 이미_배정된_좌석이_하나라도_있으면_Redis_선점을_시도하지_않는다() {
+        givenSeats(seat(1L, SCHEDULE_ID), seat(2L, SCHEDULE_ID));
+        given(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).willReturn(Set.of(2L));
+
+        assertThatThrownBy(() -> hold(List.of(1L, 2L)))
+                .isInstanceOf(SeatAlreadyHeldException.class);
+
+        verify(seatHoldRepository, never()).acquire(any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void 기존_멱등_기록이_있으면_배정을_다시_검사하지_않고_최초_선점을_반환한다() {
+        givenSeats(seat(1L, SCHEDULE_ID));
+        given(seatHoldRepository.findPreviousAcquisition(SCHEDULE_ID, MEMBER_ID, IDEMPOTENCY_KEY, "1:1"))
+                .willReturn(Optional.of(new SeatHoldAcquisition(
+                        SeatHoldAcquireResult.REPLAYED, "hold_first", EXPIRES_AT)));
+
+        SeatHoldResult result = hold(List.of(1L));
+
+        assertThat(result.replayed()).isTrue();
+        assertThat(result.response().holdId()).isEqualTo("hold_first");
+        assertThat(result.response().expiresAt()).isEqualTo(EXPIRES_AT_IN_KST);
+        verifyNoInteractions(seatAssignmentReader);
+        verify(seatHoldRepository, never()).acquire(any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void 최초_멱등_조회_후_예매가_배정되면_멱등_기록을_다시_확인한다() {
+        givenSeats(seat(1L, SCHEDULE_ID));
+        given(seatHoldRepository.findPreviousAcquisition(SCHEDULE_ID, MEMBER_ID, IDEMPOTENCY_KEY, "1:1"))
+                .willReturn(Optional.empty(), Optional.of(new SeatHoldAcquisition(
+                        SeatHoldAcquireResult.REPLAYED, "hold_first", EXPIRES_AT)));
+        given(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).willReturn(Set.of(1L));
+
+        SeatHoldResult result = hold(List.of(1L));
+
+        assertThat(result.replayed()).isTrue();
+        assertThat(result.response().holdId()).isEqualTo("hold_first");
+        assertThat(result.response().expiresAt()).isEqualTo(EXPIRES_AT_IN_KST);
+        verify(seatHoldRepository, never()).acquire(any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void 기존_멱등_기록과_요청이_다르면_배정_검사_전에_키_재사용으로_거절한다() {
+        givenSeats(seat(1L, SCHEDULE_ID));
+        given(seatHoldRepository.findPreviousAcquisition(SCHEDULE_ID, MEMBER_ID, IDEMPOTENCY_KEY, "1:1"))
+                .willReturn(Optional.of(SeatHoldAcquisition.failed(SeatHoldAcquireResult.IDEMPOTENCY_KEY_REUSED)));
+
+        assertThatThrownBy(() -> hold(List.of(1L))).isInstanceOf(IdempotencyKeyReusedException.class);
+        verifyNoInteractions(seatAssignmentReader);
+        verify(seatHoldRepository, never()).acquire(any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void 요청하지_않은_좌석의_배정은_선점을_막지_않는다() {
+        givenSeats(seat(1L, SCHEDULE_ID));
+        given(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).willReturn(Set.of(2L));
+        givenAcquire(new SeatHoldAcquisition(
+                SeatHoldAcquireResult.ACQUIRED, "hold_new", EXPIRES_AT));
+
+        assertThat(hold(List.of(1L)).replayed()).isFalse();
     }
 
     @Test
