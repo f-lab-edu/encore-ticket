@@ -15,9 +15,9 @@ import java.util.Map;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.function.Supplier;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.booking.reservation.port.CompletedPaymentReader;
 
 
 import org.springframework.stereotype.Service;
@@ -33,6 +33,7 @@ public class ReservationQueryService {
     private final ReservationRepository reservationRepository;
     private final SeatCatalogReader seatCatalogReader;
     private final ScheduleCatalogReader scheduleCatalogReader;
+    private final CompletedPaymentReader completedPaymentReader;
 
     public PageResponse<ReservationSummaryResponse> reservationsOf(Long memberId, int page, int size) {
         List<Reservation> reservations = reservationRepository.findPageByMemberId(memberId, page, size);
@@ -49,14 +50,13 @@ public class ReservationQueryService {
 
     public ReservationDetailResponse detail(
             Long reservationId,
-            Long memberId,
-            Supplier<CompletedPayment> completedPayment) {
+            Long memberId) {
         Reservation reservation = reservationRepository.getById(reservationId);
         if (!reservation.isOwnedBy(memberId)) {
             throw new ReservationNotOwnedException();
         }
 
-        CompletedPayment payment = completedPayment.get();
+        CompletedPayment payment = completedPaymentReader.completedPaymentOf(reservation.id());
         ScheduleInfo schedule = scheduleCatalogReader.scheduleOf(reservation.scheduleId());
         List<SeatInfo> seats = seatCatalogReader.seatsByIds(reservation.seatIds());
 

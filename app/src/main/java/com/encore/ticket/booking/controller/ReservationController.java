@@ -111,8 +111,7 @@ public class ReservationController {
     ReservationDetailResponse reservation(
             @PathVariable("reservationId") long reservationId,
             @AuthenticationPrincipal Long memberId) {
-        return reservationQueryService.detail(
-                reservationId, memberId, () -> paymentQueryService.completedPaymentOf(reservationId));
+        return reservationQueryService.detail(reservationId, memberId);
     }
 
     @PatchMapping("/{reservationId}")
