@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -20,6 +21,7 @@ import com.encore.ticket.core.booking.hold.domain.SeatHold;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquireResult;
 import com.encore.ticket.core.booking.hold.port.SeatHoldAcquisition;
 import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
 import com.encore.ticket.core.catalog.domain.SeatInfo;
 import com.encore.ticket.core.catalog.port.SeatCatalogReader;
 import com.encore.ticket.core.exception.InvalidRequestFieldException;
@@ -37,6 +39,7 @@ public class SeatHoldService {
 
     private final SeatHoldRepository seatHoldRepository;
     private final SeatCatalogReader seatCatalogReader;
+    private final SeatAssignmentReader seatAssignmentReader;
     private final Clock clock;
 
     public SeatHoldResult hold(
@@ -44,13 +47,10 @@ public class SeatHoldService {
 
         List<SeatInfo> seats = verifiedSeatsOf(scheduleId, seatIds);
         long totalAmount = seats.stream().mapToLong(SeatInfo::price).sum();
-
-        SeatHold seatHold = SeatHold.hold(scheduleId, seatIds, memberId, clock);
-        SeatHoldAcquisition acquisition = seatHoldRepository.acquire(
-                seatHold,
-                PURCHASE_LIMIT_PER_SCHEDULE,
-                idempotencyKey,
-                fingerprintOf(scheduleId, seatIds));
+        String fingerprint = fingerprintOf(scheduleId, seatIds);
+        SeatHoldAcquisition acquisition = seatHoldRepository.findPreviousAcquisition(
+                scheduleId, memberId, idempotencyKey, fingerprint)
+                .orElseGet(() -> acquireNew(scheduleId, seatIds, memberId, idempotencyKey, fingerprint));
 
         switch (acquisition.result()) {
             case SEAT_ALREADY_HELD -> throw new SeatAlreadyHeldException();
@@ -69,6 +69,19 @@ public class SeatHoldService {
 
         return new SeatHoldResult(
                 response, acquisition.result() == SeatHoldAcquireResult.REPLAYED);
+    }
+
+    private SeatHoldAcquisition acquireNew(
+            long scheduleId, List<Long> seatIds, long memberId, String idempotencyKey, String fingerprint) {
+        Set<Long> assigned = seatAssignmentReader.assignedSeatIdsOf(scheduleId);
+        if (seatIds.stream().anyMatch(assigned::contains)) {
+
+            return seatHoldRepository.findPreviousAcquisition(scheduleId, memberId, idempotencyKey, fingerprint)
+                    .orElseThrow(SeatAlreadyHeldException::new);
+        }
+        return seatHoldRepository.acquire(
+                SeatHold.hold(scheduleId, seatIds, memberId, clock),
+                PURCHASE_LIMIT_PER_SCHEDULE, idempotencyKey, fingerprint);
     }
 
     private static OffsetDateTime displayed(OffsetDateTime expiresAt) {

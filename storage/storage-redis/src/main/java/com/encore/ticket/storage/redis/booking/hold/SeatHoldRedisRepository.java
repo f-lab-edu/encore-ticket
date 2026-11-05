@@ -108,6 +108,23 @@ public class SeatHoldRedisRepository implements SeatHoldRepository, HoldReader {
     }
 
     @Override
+    public Optional<SeatHoldAcquisition> findPreviousAcquisition(
+            long scheduleId, long memberId, String idempotencyKey, String requestFingerprint) {
+        Map<Object, Object> fields = redisTemplate.opsForHash().entries(
+                SeatHoldRedisKeys.idempotency(scheduleId, memberId, idempotencyKey));
+        if (fields.isEmpty()) {
+            return Optional.empty();
+        }
+        if (!required(fields, "fingerprint").equals(requestFingerprint)) {
+            return Optional.of(SeatHoldAcquisition.failed(SeatHoldAcquireResult.IDEMPOTENCY_KEY_REUSED));
+        }
+        return Optional.of(new SeatHoldAcquisition(
+                SeatHoldAcquireResult.REPLAYED,
+                required(fields, "holdId"),
+                OffsetDateTime.parse(required(fields, "expiresAt"))));
+    }
+
+    @Override
     public Map<Long, OffsetDateTime> holdExpiryBySeatId(Long scheduleId) {
         String key = SeatHoldRedisKeys.scheduleSeats(scheduleId);
         long nowMillis = Instant.now(clock).toEpochMilli();

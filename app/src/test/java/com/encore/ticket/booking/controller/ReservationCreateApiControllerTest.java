@@ -8,6 +8,7 @@ import com.encore.ticket.core.booking.hold.port.SeatHoldRepository;
 import com.encore.ticket.core.booking.reservation.port.HoldReader;
 import com.encore.ticket.core.booking.reservation.domain.Reservation;
 import com.encore.ticket.core.booking.reservation.port.ReservationRepository;
+import com.encore.ticket.core.booking.seat.port.SeatAssignmentReader;
 import com.encore.ticket.core.payment.domain.Payment;
 import com.encore.ticket.core.payment.port.PaymentRepository;
 import com.encore.ticket.core.payment.dto.PaymentStatus;
@@ -54,6 +55,9 @@ class ReservationCreateApiControllerTest extends ApiSpecTestSupport {
 
     @Autowired
     private PaymentRepository paymentRepository;
+
+    @Autowired
+    private SeatAssignmentReader seatAssignmentReader;
 
     @Test
     void 선점을_예매로_생성하면_201과_좌석이_RESERVED로_반영된다() {
@@ -214,6 +218,58 @@ class ReservationCreateApiControllerTest extends ApiSpecTestSupport {
     }
 
     @Test
+    void 예매로_배정된_뒤에도_같은_선점_요청은_최초_결과를_재반환한다() {
+        String idempotencyKey = "hold-before-reservation";
+        JsonPath first = requestHold(List.of(9001L), idempotencyKey)
+                .then().statusCode(201).extract().jsonPath();
+        create(first.getString("holdId")).then().statusCode(201);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).containsExactly(9001L);
+
+        JsonPath replay = requestHold(List.of(9001L), idempotencyKey)
+                .then().statusCode(200).extract().jsonPath();
+
+        assertThat(replay.getMap("$")).isEqualTo(first.getMap("$"));
+        requestHold(List.of(9001L, 9002L), idempotencyKey).then().statusCode(409)
+                .body("code", equalTo("IDEMPOTENCY_KEY_REUSED"));
+        requestHold(List.of(9001L)).then().statusCode(409)
+                .body("code", equalTo("SEAT_ALREADY_HELD"));
+        assertThat(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID)).containsOnlyKeys(9001L);
+    }
+
+    @Test
+    void Redis_선점이_없어도_DB에_배정된_좌석은_선점할_수_없다() {
+        String firstHold = holdViaHttp(List.of(9001L));
+        long reservationId = create(firstHold).then().statusCode(201)
+                .extract().jsonPath().getLong("reservationId");
+        // TTL 경과 후의 상태를 만들되, DB의 현재 좌석 배정은 유지한다.
+        try (var connection = redisTemplate.getConnectionFactory().getConnection()) {
+            connection.serverCommands().flushDb();
+        }
+        assertThat(holdReader.findByHoldId(firstHold)).isEmpty();
+        assertThat(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID)).isEmpty();
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).containsExactly(9001L);
+
+        requestHold(List.of(9001L)).then().statusCode(409)
+                .body("code", equalTo("SEAT_ALREADY_HELD"));
+        requestHold(List.of(9001L, 9002L)).then().statusCode(409)
+                .body("code", equalTo("SEAT_ALREADY_HELD"));
+
+        assertThat(seatHoldRepository.holdExpiryBySeatId(SCHEDULE_ID)).isEmpty();
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).containsExactly(9001L);
+        assertThat(reservationRepository.getById(reservationId).status())
+                .isEqualTo(ReservationStatus.PENDING_PAYMENT);
+
+        // 배정이 해제되면 동일한 좌석을 다시 선점할 수 있다.
+        RestAssured.given().spec(spec)
+                .header("Authorization", BEARER_TOKEN)
+                .body(Map.of("status", "CANCELLED"))
+                .when().patch("/reservations/{reservationId}", reservationId)
+                .then().statusCode(200);
+        assertThat(seatAssignmentReader.assignedSeatIdsOf(SCHEDULE_ID)).isEmpty();
+        requestHold(List.of(9001L)).then().statusCode(201);
+    }
+
+    @Test
     void 다른_예매가_배정한_좌석은_409이며_새_예매를_남기지_않는다() {
         String firstHold = holdViaHttp(List.of(9001L));
         long firstId = create(firstHold).then().statusCode(201).extract().jsonPath().getLong("reservationId");
@@ -221,7 +277,9 @@ class ReservationCreateApiControllerTest extends ApiSpecTestSupport {
         try (var connection = redisTemplate.getConnectionFactory().getConnection()) {
             connection.serverCommands().flushDb();
         }
-        String secondHold = holdViaHttp(List.of(9001L));
+        // 선점 사전 확인 이후 경합이 생기는 경우에도 예매 저장의 중복 방어는 필요하다.
+        // API의 배정 검사를 우회해 Redis 선점을 준비하고 DB의 최종 거절을 검증한다.
+        String secondHold = holdOf(MEMBER_ID, List.of(9001L)).holdId();
 
         create(secondHold).then().statusCode(409).body("code", equalTo("SEAT_ALREADY_HELD"));
 
@@ -260,14 +318,21 @@ class ReservationCreateApiControllerTest extends ApiSpecTestSupport {
     }
 
     private String holdViaHttp(List<Long> seatIds) {
-        JsonPath body = RestAssured.given().spec(spec)
+        return requestHold(seatIds).then().statusCode(201)
+                .extract().jsonPath().getString("holdId");
+    }
+
+    private Response requestHold(List<Long> seatIds) {
+        return requestHold(seatIds, "http-" + System.nanoTime());
+    }
+
+    private Response requestHold(List<Long> seatIds, String idempotencyKey) {
+        return RestAssured.given().spec(spec)
                 .header("Authorization", BEARER_TOKEN)
                 .header("X-Queue-Token", admittedQueueToken(SCHEDULE_ID))
-                .header("Idempotency-Key", "http-" + System.nanoTime())
+                .header("Idempotency-Key", idempotencyKey)
                 .body(Map.of("scheduleId", SCHEDULE_ID, "seatIds", seatIds))
-                .when().post("/reservations/holds")
-                .then().statusCode(201).extract().jsonPath();
-        return body.getString("holdId");
+                .when().post("/reservations/holds");
     }
 
     private Reservation saveReservation(String holdId, long memberId, ReservationStatus status,

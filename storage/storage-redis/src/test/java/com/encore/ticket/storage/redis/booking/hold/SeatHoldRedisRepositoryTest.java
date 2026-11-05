@@ -190,6 +190,48 @@ class SeatHoldRedisRepositoryTest extends RedisContainerSupport {
     }
 
     @Test
+    void 멱등_기록을_조회해_최초_선점_결과를_복원한다() {
+        SeatHold first = hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30));
+        acquire(first, 4, "idem-1");
+
+        SeatHoldAcquisition previous = repository.findPreviousAcquisition(
+                1L, 100L, "idem-1", fingerprintOf(first)).orElseThrow();
+
+        assertThat(previous.result()).isEqualTo(SeatHoldAcquireResult.REPLAYED);
+        assertThat(previous.holdId()).isEqualTo(first.holdId());
+        assertThat(previous.expiresAt()).isEqualTo(first.expiresAt());
+        assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L);
+    }
+
+    @Test
+    void 멱등_기록의_요청이_다르면_키_재사용_결과를_반환한다() {
+        acquire(hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30)), 4, "idem-1");
+
+        assertThat(repository.findPreviousAcquisition(1L, 100L, "idem-1", "1:12").orElseThrow().result())
+                .isEqualTo(SeatHoldAcquireResult.IDEMPOTENCY_KEY_REUSED);
+        assertThat(repository.holdExpiryBySeatId(1L)).containsOnlyKeys(11L);
+    }
+
+    @Test
+    void 다른_회원이나_회차의_멱등_기록은_조회하지_않는다() {
+        SeatHold first = hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30));
+        acquire(first, 4, "idem-1");
+
+        assertThat(repository.findPreviousAcquisition(1L, 200L, "idem-1", fingerprintOf(first))).isEmpty();
+        assertThat(repository.findPreviousAcquisition(2L, 100L, "idem-1", fingerprintOf(first))).isEmpty();
+        assertThat(repository.findPreviousAcquisition(1L, 100L, "unknown", fingerprintOf(first))).isEmpty();
+    }
+
+    @Test
+    void 만료된_멱등_기록은_재반환하지_않는다() {
+        SeatHold first = hold("hold_short", 1L, List.of(11L), 100L, Duration.ofMillis(300));
+        acquire(first, 4, "idem-1");
+
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                assertThat(repository.findPreviousAcquisition(1L, 100L, "idem-1", fingerprintOf(first))).isEmpty());
+    }
+
+    @Test
     void 멱등성_키는_회원마다_독립이다() {
         acquire(hold("hold_A", 1L, List.of(11L), 100L, Duration.ofSeconds(30)), 4, "idem-1");
 
