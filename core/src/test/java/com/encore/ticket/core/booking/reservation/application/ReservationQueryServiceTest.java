@@ -1,6 +1,7 @@
 package com.encore.ticket.core.booking.reservation.application;
 
 import com.encore.ticket.core.booking.CompletedPayment;
+import com.encore.ticket.core.booking.reservation.port.CompletedPaymentReader;
 import com.encore.ticket.core.booking.dto.ReservationDetailResponse;
 import com.encore.ticket.core.booking.dto.ReservationStatus;
 import com.encore.ticket.core.booking.dto.ReservationSummaryResponse;
@@ -51,12 +52,14 @@ class ReservationQueryServiceTest {
     @Mock ReservationRepository reservationRepository;
     @Mock SeatCatalogReader seatCatalogReader;
     @Mock ScheduleCatalogReader scheduleCatalogReader;
+    @Mock CompletedPaymentReader completedPaymentReader;
 
     ReservationQueryService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReservationQueryService(reservationRepository, seatCatalogReader, scheduleCatalogReader);
+        service = new ReservationQueryService(
+                reservationRepository, seatCatalogReader, scheduleCatalogReader, completedPaymentReader);
     }
 
     private Reservation reservation(long id, long scheduleId, List<Long> seatIds, ReservationStatus status) {
@@ -171,9 +174,10 @@ class ReservationQueryServiceTest {
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L, 1002L))).willReturn(vipSeats());
 
-        ReservationDetailResponse response = service.detail(
-                RESERVATION_ID, MEMBER_ID,
-                () -> new CompletedPayment("payment-key", "reservation-501-1"));
+        given(completedPaymentReader.completedPaymentOf(RESERVATION_ID))
+                .willReturn(new CompletedPayment("payment-key", "reservation-501-1"));
+
+        ReservationDetailResponse response = service.detail(RESERVATION_ID, MEMBER_ID);
 
         assertThat(response.id()).isEqualTo(RESERVATION_ID);
         assertThat(response.status()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -201,9 +205,10 @@ class ReservationQueryServiceTest {
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
 
-        ReservationDetailResponse response = service.detail(
-                RESERVATION_ID, MEMBER_ID,
-                () -> new CompletedPayment("payment-key", "reservation-501-1"));
+        given(completedPaymentReader.completedPaymentOf(RESERVATION_ID))
+                .willReturn(new CompletedPayment("payment-key", "reservation-501-1"));
+
+        ReservationDetailResponse response = service.detail(RESERVATION_ID, MEMBER_ID);
 
         assertThat(response.paymentKey()).isEqualTo("payment-key");
         assertThat(response.orderId()).isEqualTo("reservation-501-1");
@@ -216,8 +221,9 @@ class ReservationQueryServiceTest {
         given(scheduleCatalogReader.scheduleOf(SCHEDULE_ID)).willReturn(schedule(SCHEDULE_ID, "2026 아이유 콘서트"));
         given(seatCatalogReader.seatsByIds(List.of(1001L))).willReturn(vipSeats());
 
-        ReservationDetailResponse response = service.detail(
-                RESERVATION_ID, MEMBER_ID, () -> CompletedPayment.NONE);
+        given(completedPaymentReader.completedPaymentOf(RESERVATION_ID)).willReturn(CompletedPayment.NONE);
+
+        ReservationDetailResponse response = service.detail(RESERVATION_ID, MEMBER_ID);
 
         assertThat(response.status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
         assertThat(response.paymentKey()).isNull();
@@ -229,13 +235,11 @@ class ReservationQueryServiceTest {
         given(reservationRepository.getById(RESERVATION_ID)).willReturn(
                 reservation(RESERVATION_ID, SCHEDULE_ID, List.of(1001L), ReservationStatus.CONFIRMED));
 
-        assertThatThrownBy(() -> service.detail(
-                RESERVATION_ID, OTHER_MEMBER_ID,
-                () -> {
-                    throw new AssertionError("소유권 확인 전에 결제를 조회하면 안 됩니다.");
-                }))
+        assertThatThrownBy(() -> service.detail(RESERVATION_ID, OTHER_MEMBER_ID))
                 .isInstanceOf(ReservationNotOwnedException.class);
 
+        verify(completedPaymentReader, never()).completedPaymentOf(anyLong());
+        verify(scheduleCatalogReader, never()).scheduleOf(anyLong());
         verify(seatCatalogReader, never()).seatsByIds(any());
     }
 }
